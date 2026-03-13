@@ -1,9 +1,9 @@
 import type { Context } from '@netlify/functions';
-import { verifyAuth } from '../../src/services/auth.js';
+import { verifyAuth, unauthorizedResponse } from '../../src/services/auth.js';
 import {
   getAllArticles, getSecFilings, getAumData, getLatestBrief,
   getPersonnelChanges, getMandateEvents, getJobTrends,
-  getAdvAnalyses, getArticleStats,
+  getAdvAnalyses, getArticleStats, getSocialFeed,
 } from '../../src/services/blobStore.js';
 
 function toCsv(headers: string[], rows: string[][]): string {
@@ -21,8 +21,8 @@ function toCsv(headers: string[], rows: string[][]): string {
 }
 
 export default async (req: Request, context: Context) => {
-  const authError = verifyAuth(req);
-  if (authError) return authError;
+  // Auth check
+  if (!(await verifyAuth(req))) return unauthorizedResponse();
 
   const url = new URL(req.url);
   const type = url.searchParams.get('type') || 'brief';
@@ -163,6 +163,23 @@ export default async (req: Request, context: Context) => {
         headers: {
           'Content-Type': 'text/csv',
           'Content-Disposition': 'attachment; filename="form-adv-analysis.csv"',
+        },
+      });
+    }
+
+    if (type === 'social') {
+      const feed = await getSocialFeed();
+      const posts = feed?.posts || [];
+      const headers = ['Date', 'Platform', 'Entity', 'Author', 'Title', 'Content', 'Score', 'Comments', 'Sentiment', 'Sentiment Score', 'URL'];
+      const rows = posts.map(p => [
+        p.posted_at, p.platform, p.entity_name, p.author,
+        p.title || '', p.content.substring(0, 200), String(p.score),
+        String(p.comments), p.sentiment_label, String(p.sentiment_score), p.url,
+      ]);
+      return new Response(toCsv(headers, rows), {
+        headers: {
+          'Content-Type': 'text/csv',
+          'Content-Disposition': 'attachment; filename="social-feed.csv"',
         },
       });
     }

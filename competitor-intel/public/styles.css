@@ -2828,12 +2828,199 @@ header {
   box-shadow: 0 0 20px rgba(99,102,241,0.04);
 }
 
+/* ── Social Media Feed ──────────────────────────────── */
+
+/* Buzz strip */
+.social-buzz-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  padding: 0 0 20px 0;
+}
+.social-buzz-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  position: relative;
+  overflow: hidden;
+  animation: briefFadeUp 0.5s ease-out both;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.social-buzz-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-muted));
+  border-radius: 12px 12px 0 0;
+}
+.social-buzz-card:hover {
+  border-color: rgba(99,102,241,0.3);
+  box-shadow: 0 0 20px rgba(99,102,241,0.08);
+}
+.social-buzz-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.social-buzz-count {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+.social-buzz-count .social-buzz-label {
+  font-size: 0.65rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.social-buzz-sentiment {
+  font-size: 0.75rem;
+  margin-top: 4px;
+  text-transform: capitalize;
+}
+.social-buzz-platforms {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.social-platform-badge {
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+}
+.reddit-badge { border-color: #ff4500; color: #ff6633; }
+.stw-badge { border-color: #1da1f2; color: #4db8ff; }
+
+/* Post cards */
+.social-posts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.social-post-card {
+  display: block;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 18px;
+  text-decoration: none;
+  color: inherit;
+  position: relative;
+  overflow: hidden;
+  animation: briefFadeUp 0.4s ease-out both;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+  cursor: pointer;
+}
+.social-post-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  width: 3px;
+}
+.social-post-card.sentiment-positive::before { background: var(--positive); }
+.social-post-card.sentiment-negative::before { background: var(--negative); }
+.social-post-card.sentiment-neutral::before { background: var(--text-muted); }
+.social-post-card:hover {
+  border-color: rgba(99,102,241,0.3);
+  box-shadow: 0 0 20px rgba(99,102,241,0.06);
+  transform: translateY(-1px);
+}
+.social-post-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 0.75rem;
+}
+.social-post-platform {
+  background: rgba(255,255,255,0.06);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.7rem;
+}
+.social-post-entity {
+  color: var(--accent);
+  font-weight: 600;
+}
+.social-post-time {
+  color: var(--text-muted);
+  margin-left: auto;
+}
+.social-post-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin-bottom: 6px;
+  color: var(--text);
+  line-height: 1.3;
+}
+.social-post-content {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+.social-post-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.social-post-author {
+  font-weight: 500;
+}
+.social-post-score {
+  font-weight: 600;
+  color: var(--gold);
+}
+.social-post-comments {
+  color: var(--text-muted);
+}
+.social-post-sentiment {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.social-post-sentiment.sentiment-positive {
+  background: rgba(34,197,94,0.12);
+  color: var(--positive);
+}
+.social-post-sentiment.sentiment-negative {
+  background: rgba(239,68,68,0.12);
+  color: var(--negative);
+}
+.social-post-sentiment.sentiment-neutral {
+  background: rgba(148,163,184,0.12);
+  color: var(--text-muted);
+}
+
 /* V2 Responsive */
 @media (max-width: 1024px) {
   .v2-grid-3col { grid-template-columns: repeat(2, 1fr); }
+  .social-buzz-strip { grid-template-columns: repeat(3, 1fr); }
 }
 @media (max-width: 640px) {
   .v2-grid-2col, .v2-grid-3col { grid-template-columns: 1fr; }
   .v2-filter-bar { flex-direction: column; }
   .v2-kpi-strip .kpi-card { min-width: 130px; }
+  .social-buzz-strip { grid-template-columns: repeat(2, 1fr); }
+  .social-post-header { flex-wrap: wrap; }
+  .social-post-footer { flex-wrap: wrap; }
 }

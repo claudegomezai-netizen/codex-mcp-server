@@ -438,6 +438,7 @@ function switchTab(tabName) {
   if (tabName === 'personnel') loadPersonnel();
   if (tabName === 'jobs') loadJobs();
   if (tabName === 'predictions') loadPredictions();
+  if (tabName === 'social') loadSocialFeed();
   if (tabName === 'calendar') loadEvents();
   if (tabName === 'export') {}
   if (tabName === 'log') loadCrawlLog();
@@ -1486,6 +1487,12 @@ function renderBrief(brief) {
   }
   html += '</div>';
 
+  // Social Buzz (async-loaded)
+  html += '<div class="brief-card brief-clickable" id="briefSocialBuzz" style="animation-delay:0.73s" onclick="switchTab(\'social\')">';
+  html += '<div class="brief-card-header"><span class="brief-card-title">\uD83D\uDCF1 Social Buzz</span></div>';
+  html += '<div class="empty" style="font-size:12px">Loading social data...</div>';
+  html += '</div>';
+
   // Themes & Trends
   html += '<div class="brief-card brief-clickable" style="animation-delay:0.75s" onclick="switchTab(\'trends\')">';
   html += '<div class="brief-card-header"><span class="brief-card-title">\uD83C\uDF10 Themes</span></div>';
@@ -1528,7 +1535,35 @@ function renderBrief(brief) {
       el.setAttribute('stroke-dashoffset', el.getAttribute('data-target'));
     });
   }, 50);
+
+  // Async-load social buzz into brief card
+  loadBriefSocialBuzz();
 }
+
+async function loadBriefSocialBuzz() {
+  var card = document.getElementById('briefSocialBuzz');
+  if (!card) return;
+  try {
+    var res = await apiFetch('/api/social?limit=0');
+    var data = await res.json();
+    var buzz = data.buzz_summary || [];
+    if (buzz.length === 0) {
+      card.querySelector('.empty').textContent = 'No social data. Use the Social Feed tab to scan.';
+      return;
+    }
+    var inner = '<div class="brief-card-header"><span class="brief-card-title">\uD83D\uDCF1 Social Buzz</span><span class="brief-card-badge" style="background:var(--surface2);color:var(--text-muted)">' + buzz.reduce(function(s,b){return s+b.mention_count;},0) + ' mentions</span></div>';
+    var maxMentions = Math.max.apply(null, buzz.map(function(b){return b.mention_count;}));
+    buzz.slice(0, 8).forEach(function(b) {
+      var pct = Math.max((b.mention_count / maxMentions) * 100, 5);
+      var sentColor = b.sentiment_label === 'positive' ? 'var(--positive)' : b.sentiment_label === 'negative' ? 'var(--negative)' : 'var(--text-muted)';
+      var sentIcon = b.sentiment_label === 'positive' ? '\u25B2' : b.sentiment_label === 'negative' ? '\u25BC' : '\u2500';
+      inner += '<div class="comp-row"><span class="comp-name">' + escHtml(b.entity_name) + '</span><div class="comp-bar-wrap"><div class="comp-bar other" style="width:' + pct + '%"></div></div><span class="comp-count" style="color:' + sentColor + '">' + sentIcon + ' ' + b.mention_count + '</span></div>';
+    });
+    card.innerHTML = inner;
+  } catch (err) {
+    var emptyEl = card.querySelector('.empty');
+    if (emptyEl) emptyEl.textContent = 'Social data unavailable.';
+  }
 
 // ── Competitor Discovery ────────────────────────────────
 async function discoverCompetitors() {
@@ -2749,5 +2784,158 @@ async function triggerFinraCrawl() {
     loadFinraAlerts();
   } catch (err) {
     console.error('FINRA crawl failed:', err);
+  }
+}
+
+// ── Social Media Feed ──────────────────────────────────
+let socialOffset = 0;
+const SOCIAL_LIMIT = 50;
+let socialSearchTimer = null;
+
+function debounceSocialSearch() {
+  clearTimeout(socialSearchTimer);
+  socialSearchTimer = setTimeout(() => { socialOffset = 0; loadSocialFeed(); }, 400);
+}
+
+async function loadSocialFeed() {
+  const entityFilter = document.getElementById('filterSocialEntity').value;
+  const platform = document.getElementById('filterSocialPlatform').value;
+  const sentiment = document.getElementById('filterSocialSentiment').value;
+  const search = document.getElementById('filterSocialSearch').value;
+
+  try {
+    const params = new URLSearchParams({
+      entity: entityFilter,
+      platform: platform,
+      sentiment: sentiment,
+      search: search,
+      limit: SOCIAL_LIMIT.toString(),
+      offset: socialOffset.toString(),
+    });
+    const res = await apiFetch('/api/social?' + params);
+    const data = await res.json();
+
+    // Populate entity filter if not done yet
+    var select = document.getElementById('filterSocialEntity');
+    if (select.options.length <= 1) {
+      entities.all.forEach(function(e) {
+        var opt = document.createElement('option');
+        opt.value = e.id;
+        opt.textContent = e.name;
+        select.appendChild(opt);
+      });
+    }
+
+    renderSocialBuzzStrip(data.buzz_summary || []);
+    renderSocialPosts(data.posts || [], data.total || 0);
+
+    if (data.updated_at) {
+      document.getElementById('socialTimestamp').textContent = 'Updated: ' + new Date(data.updated_at).toLocaleString();
+    }
+  } catch (err) {
+    console.error('Failed to load social feed:', err);
+  }
+}
+
+function renderSocialBuzzStrip(buzz) {
+  var strip = document.getElementById('socialBuzzStrip');
+  if (!buzz || buzz.length === 0) {
+    strip.innerHTML = '';
+    return;
+  }
+
+  // Show top entities with mentions
+  strip.innerHTML = buzz.slice(0, 12).map(function(b, i) {
+    var sentColor = b.sentiment_label === 'positive' ? 'var(--positive)' :
+                    b.sentiment_label === 'negative' ? 'var(--negative)' : 'var(--text-muted)';
+    var sentIcon = b.sentiment_label === 'positive' ? '&#9650;' :
+                   b.sentiment_label === 'negative' ? '&#9660;' : '&#9644;';
+    var redditBadge = b.platforms.reddit > 0 ? '<span class="social-platform-badge reddit-badge" title="Reddit mentions">\u{1F4AC} ' + b.platforms.reddit + '</span>' : '';
+    var stwBadge = b.platforms.stocktwits > 0 ? '<span class="social-platform-badge stw-badge" title="StockTwits mentions">\u{1F4CA} ' + b.platforms.stocktwits + '</span>' : '';
+
+    return '<div class="social-buzz-card" style="animation-delay:' + (i * 60) + 'ms">' +
+      '<div class="social-buzz-name">' + escHtml(b.entity_name) + '</div>' +
+      '<div class="social-buzz-count">' + b.mention_count + ' <span class="social-buzz-label">mentions</span></div>' +
+      '<div class="social-buzz-sentiment" style="color:' + sentColor + '">' + sentIcon + ' ' + b.sentiment_label + '</div>' +
+      '<div class="social-buzz-platforms">' + redditBadge + stwBadge + '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function renderSocialPosts(posts, total) {
+  var list = document.getElementById('socialPostsList');
+  var btnMore = document.getElementById('btnSocialLoadMore');
+
+  if (!posts || posts.length === 0) {
+    list.innerHTML = '<div class="empty">No social media posts found. Click "Scan Social Media" to search Reddit &amp; StockTwits.</div>';
+    btnMore.style.display = 'none';
+    return;
+  }
+
+  var html = posts.map(function(p, i) {
+    var sentClass = 'sentiment-' + p.sentiment_label;
+    var platformIcon = p.platform === 'reddit' ? '\u{1F4AC}' : '\u{1F4CA}';
+    var platformLabel = p.platform === 'reddit' ? 'r/' + (p.subreddit || 'reddit') : 'StockTwits';
+    var scoreLabel = p.platform === 'reddit' ? '\u2B06 ' + p.score : '\u2665 ' + p.score;
+    var timeAgo = formatTimeAgo(p.posted_at);
+    var title = p.title ? '<div class="social-post-title">' + escHtml(p.title) + '</div>' : '';
+    var content = p.content ? '<div class="social-post-content">' + escHtml(p.content).substring(0, 300) + (p.content.length > 300 ? '...' : '') + '</div>' : '';
+
+    return '<a href="' + p.url + '" target="_blank" class="social-post-card ' + sentClass + '" style="animation-delay:' + (i * 40) + 'ms">' +
+      '<div class="social-post-header">' +
+        '<span class="social-post-platform">' + platformIcon + ' ' + platformLabel + '</span>' +
+        '<span class="social-post-entity">' + escHtml(p.entity_name) + '</span>' +
+        '<span class="social-post-time">' + timeAgo + '</span>' +
+      '</div>' +
+      title +
+      content +
+      '<div class="social-post-footer">' +
+        '<span class="social-post-author">u/' + escHtml(p.author) + '</span>' +
+        '<span class="social-post-score">' + scoreLabel + '</span>' +
+        '<span class="social-post-comments">\u{1F4AC} ' + p.comments + '</span>' +
+        '<span class="social-post-sentiment ' + sentClass + '">' + p.sentiment_label + '</span>' +
+      '</div>' +
+    '</a>';
+  }).join('');
+
+  if (socialOffset === 0) {
+    list.innerHTML = html;
+  } else {
+    list.innerHTML += html;
+  }
+
+  btnMore.style.display = (socialOffset + SOCIAL_LIMIT < total) ? 'inline-block' : 'none';
+}
+
+function loadMoreSocial() {
+  socialOffset += SOCIAL_LIMIT;
+  loadSocialFeed();
+}
+
+function formatTimeAgo(dateStr) {
+  var now = new Date();
+  var d = new Date(dateStr);
+  var diff = Math.floor((now - d) / 1000);
+  if (diff < 60) return diff + 's ago';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+  if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
+  return d.toLocaleDateString();
+}
+
+async function triggerSocialCrawl() {
+  var btn = document.getElementById('btnSocialCrawl');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Scanning...';
+
+  try {
+    var res = await apiFetch('/api/social/crawl', { method: 'POST' });
+    var data = await res.json();
+    btn.textContent = 'Done! (' + (data.posts_found || 0) + ' posts)';
+    setTimeout(function() { btn.textContent = 'Scan Social Media'; btn.disabled = false; }, 3000);
+    loadSocialFeed();
+  } catch (err) {
+    btn.textContent = 'Error';
+    setTimeout(function() { btn.textContent = 'Scan Social Media'; btn.disabled = false; }, 3000);
   }
 }

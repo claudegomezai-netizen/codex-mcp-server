@@ -31,6 +31,7 @@
       <button class="tab" data-tab="stats" onclick="switchTab('stats')">Intelligence</button>
       <button class="tab" data-tab="market" onclick="switchTab('market')">Market Indicators</button>
       <button class="tab" data-tab="predictions" onclick="switchTab('predictions')">Predictions</button>
+      <button class="tab" data-tab="social" onclick="switchTab('social')">Social Feed</button>
       <button class="tab" data-tab="calendar" onclick="switchTab('calendar')">Gov Calendar</button>
       <button class="tab" data-tab="export" onclick="switchTab('export')">Export</button>
     </div>
@@ -359,6 +360,53 @@
     </div>
   </section>
 
+  <!-- ── Social Feed Tab ─────────────────────── -->
+  <section id="tab-social" class="tab-content">
+    <div class="tab-title-bar">
+      <h2>Social Media Feed</h2>
+      <div class="tab-actions">
+        <span id="socialTimestamp" class="brief-timestamp"></span>
+        <button id="btnSocialCrawl" class="btn btn-primary" onclick="triggerSocialCrawl()">Scan Social Media</button>
+      </div>
+    </div>
+    <div id="socialBuzzStrip" class="social-buzz-strip"></div>
+    <div class="filters v2-filter-bar">
+      <div class="filter-group">
+        <label>Company</label>
+        <select id="filterSocialEntity" onchange="loadSocialFeed()">
+          <option value="all">All Companies</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Platform</label>
+        <select id="filterSocialPlatform" onchange="loadSocialFeed()">
+          <option value="all">All Platforms</option>
+          <option value="reddit">Reddit</option>
+          <option value="stocktwits">StockTwits</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Sentiment</label>
+        <select id="filterSocialSentiment" onchange="loadSocialFeed()">
+          <option value="all">All</option>
+          <option value="positive">Positive</option>
+          <option value="neutral">Neutral</option>
+          <option value="negative">Negative</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Search</label>
+        <input type="text" id="filterSocialSearch" placeholder="Search posts..." oninput="debounceSocialSearch()">
+      </div>
+    </div>
+    <div id="socialPostsList" class="social-posts-list">
+      <div class="empty">Click "Scan Social Media" to monitor Reddit &amp; StockTwits for competitor mentions.</div>
+    </div>
+    <div class="load-more">
+      <button id="btnSocialLoadMore" class="btn btn-secondary" onclick="loadMoreSocial()" style="display:none;">Load More</button>
+    </div>
+  </section>
+
   <!-- ── Form ADV Analysis Tab ────────────────── -->
   <section id="tab-adv" class="tab-content">
     <div class="tab-title-bar">
@@ -482,6 +530,13 @@
         <p>Deep analysis of Form ADV filings with fees and client data.</p>
         <div class="export-actions">
           <button class="btn btn-primary" onclick="downloadExport('adv', 'csv')">CSV</button>
+        </div>
+      </div>
+      <div class="export-card">
+        <h3>Social Media Feed</h3>
+        <p>Reddit &amp; StockTwits mentions with sentiment analysis.</p>
+        <div class="export-actions">
+          <button class="btn btn-primary" onclick="downloadExport('social', 'csv')">CSV</button>
         </div>
       </div>
     </div>

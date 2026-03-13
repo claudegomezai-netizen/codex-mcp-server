@@ -749,6 +749,42 @@ export interface TrendSnapshot {
   metadata?: Record<string, any>;
 }
 
+// ── Social Media Posts ─────────────────────────────────
+
+export interface SocialPost {
+  id: string;
+  platform: 'reddit' | 'stocktwits';
+  entity_id: string;
+  entity_name: string;
+  author: string;
+  content: string;
+  title?: string; // Reddit post title
+  subreddit?: string; // Reddit subreddit
+  url: string;
+  score: number; // upvotes / likes
+  comments: number;
+  sentiment_score: number; // -1 to 1
+  sentiment_label: 'positive' | 'neutral' | 'negative';
+  posted_at: string;
+  fetched_at: string;
+}
+
+export interface SocialBuzz {
+  entity_id: string;
+  entity_name: string;
+  mention_count: number;
+  avg_sentiment: number;
+  sentiment_label: 'positive' | 'neutral' | 'negative';
+  top_post: { title: string; url: string; score: number } | null;
+  platforms: { reddit: number; stocktwits: number };
+}
+
+export interface SocialFeedData {
+  posts: SocialPost[];
+  buzz_summary: SocialBuzz[];
+  updated_at: string;
+}
+
 // ── Key Personnel ──────────────────────────────────────
 
 export interface PersonnelChange {

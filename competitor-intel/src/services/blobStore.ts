@@ -1,5 +1,5 @@
 import { getStore } from '@netlify/blobs';
-import type { Article, GovEvent, CrawlLogEntry, AumEntry, SecFiling, PredictionMarket, CustomEntity, Entity, DailyBrief, FinancialArticle, MarketIndicators, AggregatedSentiment, Filing13F, FinraAlert, FilingSummary, FormAdvAnalysis, TrendSnapshot, PersonnelChange, MandateEvent, JobPosting, JobTrend } from '../config/competitors.js';
+import type { Article, GovEvent, CrawlLogEntry, AumEntry, SecFiling, PredictionMarket, CustomEntity, Entity, DailyBrief, FinancialArticle, MarketIndicators, AggregatedSentiment, Filing13F, FinraAlert, FilingSummary, FormAdvAnalysis, TrendSnapshot, PersonnelChange, MandateEvent, JobPosting, JobTrend, SocialPost, SocialFeedData } from '../config/competitors.js';
 import { ALL_ENTITIES, SEED_AUM_DATA } from '../config/competitors.js';
 
 function articleStore() {
@@ -707,4 +707,38 @@ export async function getJobTrends(): Promise<JobTrend[]> {
 export async function saveJobTrends(trends: JobTrend[]): Promise<void> {
   const store = jobStore();
   await store.setJSON('trends', trends);
+}
+
+// ── Social Media Posts ──────────────────────────────────
+
+function socialStore() {
+  return getStore({ name: 'social-posts', consistency: 'strong' });
+}
+
+export async function getSocialFeed(): Promise<SocialFeedData | null> {
+  const store = socialStore();
+  return ((await store.get('latest', { type: 'json' })) as SocialFeedData) || null;
+}
+
+export async function saveSocialFeed(data: SocialFeedData): Promise<void> {
+  const store = socialStore();
+  await store.setJSON('latest', data);
+}
+
+export async function addSocialPosts(newPosts: SocialPost[]): Promise<number> {
+  const store = socialStore();
+  const existing: SocialFeedData = ((await store.get('latest', { type: 'json' })) as SocialFeedData) || { posts: [], buzz_summary: [], updated_at: '' };
+
+  const existingIds = new Set(existing.posts.map(p => p.id));
+  const unique = newPosts.filter(p => !existingIds.has(p.id));
+  if (unique.length === 0) return 0;
+
+  const merged = [...unique, ...existing.posts]
+    .sort((a, b) => new Date(b.posted_at).getTime() - new Date(a.posted_at).getTime())
+    .slice(0, 1000);
+
+  existing.posts = merged;
+  existing.updated_at = new Date().toISOString();
+  await store.setJSON('latest', existing);
+  return unique.length;
 }
