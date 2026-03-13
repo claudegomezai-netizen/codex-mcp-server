@@ -1678,13 +1678,21 @@ function renderMarketIndicators(mkt, sent) {
     // ── Compute composite scores (0 = bad/risk, 100 = good/calm) ──
     var gauges = [];
 
+    // Helper: find source_url by series_id
+    function fredUrl(id) {
+      var s = mkt.fred_series.find(function(x) { return x.series_id === id; });
+      return s && s.source_url ? s.source_url : 'https://fred.stlouisfed.org/series/' + id;
+    }
+
     // 1. Fear & Greed (already 0-100)
     if (mkt.fear_greed) {
       gauges.push({
         label: 'Fear & Greed',
         score: mkt.fear_greed.score,
         sub: mkt.fear_greed.rating,
-        icon: '😰'
+        icon: '😰',
+        url: 'https://edition.cnn.com/markets/fear-and-greed',
+        sources: ['CNN Fear & Greed Index']
       });
     }
 
@@ -1697,7 +1705,7 @@ function renderMarketIndicators(mkt, sent) {
     ]);
     if (riskScore !== null) {
       var riskLabel = riskScore >= 70 ? 'Low Risk' : riskScore >= 40 ? 'Moderate' : 'Elevated';
-      gauges.push({ label: 'Market Risk', score: Math.round(riskScore), sub: riskLabel, icon: '⚡' });
+      gauges.push({ label: 'Market Risk', score: Math.round(riskScore), sub: riskLabel, icon: '⚡', url: fredUrl('VIXCLS'), sources: ['CBOE VIX', 'St. Louis Financial Stress'] });
     }
 
     // 3. Credit Health: Invert spreads (tight=good=100)
@@ -1711,7 +1719,7 @@ function renderMarketIndicators(mkt, sent) {
     ]);
     if (creditScore !== null) {
       var crLabel = creditScore >= 70 ? 'Tight' : creditScore >= 40 ? 'Normal' : 'Widening';
-      gauges.push({ label: 'Credit Health', score: Math.round(creditScore), sub: crLabel, icon: '🔗' });
+      gauges.push({ label: 'Credit Health', score: Math.round(creditScore), sub: crLabel, icon: '🔗', url: fredUrl('BAMLH0A0HYM2'), sources: ['ICE BofA HY OAS', 'BBB Spread', 'AAA Spread'] });
     }
 
     // 4. Yield Curve: 10Y-2Y spread (positive=normal=good)
@@ -1719,7 +1727,7 @@ function renderMarketIndicators(mkt, sent) {
     if (t10y2y !== null) {
       var ycScore = Math.round(norm(t10y2y, -1.0, 2.5));
       var ycLabel = t10y2y < 0 ? 'Inverted' : t10y2y < 0.5 ? 'Flat' : 'Steep';
-      gauges.push({ label: 'Yield Curve', score: ycScore, sub: (t10y2y > 0 ? '+' : '') + t10y2y.toFixed(2) + '% spread', icon: '📐' });
+      gauges.push({ label: 'Yield Curve', score: ycScore, sub: (t10y2y > 0 ? '+' : '') + t10y2y.toFixed(2) + '% spread', icon: '📐', url: fredUrl('T10Y2Y'), sources: ['Treasury 10Y-2Y Spread'] });
     }
 
     // 5. Inflation Pulse: distance from 2% target (on target = 100)
@@ -1732,7 +1740,7 @@ function renderMarketIndicators(mkt, sent) {
     if (inflScore !== null) {
       var iVal = be10 || be5;
       var iLabel = iVal > 2.8 ? 'Hot' : iVal > 2.2 ? 'Above Target' : iVal >= 1.8 ? 'On Target' : 'Below Target';
-      gauges.push({ label: 'Inflation Pulse', score: Math.round(inflScore), sub: iLabel, icon: '🔥' });
+      gauges.push({ label: 'Inflation Pulse', score: Math.round(inflScore), sub: iLabel, icon: '🔥', url: fredUrl('T10YIE'), sources: ['10Y Breakeven', '5Y Breakeven'] });
     }
 
     // 6. Dollar Strength: USD Index (normalize around 90-120 range, mid=neutral)
@@ -1740,7 +1748,7 @@ function renderMarketIndicators(mkt, sent) {
     if (dxy !== null) {
       var dolScore = Math.round(norm(dxy, 95, 135));
       var dolLabel = dolScore >= 70 ? 'Strong' : dolScore >= 40 ? 'Neutral' : 'Weak';
-      gauges.push({ label: 'USD Strength', score: dolScore, sub: dxy.toFixed(1) + ' index', icon: '💵' });
+      gauges.push({ label: 'USD Strength', score: dolScore, sub: dxy.toFixed(1) + ' index', icon: '💵', url: fredUrl('DTWEXBGS'), sources: ['Fed Broad Dollar Index'] });
     }
 
     // 7. Commodities Heat: Oil + Gas + Gold momentum (rising prices = hot)
@@ -1754,7 +1762,7 @@ function renderMarketIndicators(mkt, sent) {
     ]);
     if (cmdScore !== null) {
       var cmdLabel = cmdScore >= 70 ? 'Hot' : cmdScore >= 40 ? 'Moderate' : 'Cool';
-      gauges.push({ label: 'Commodities', score: Math.round(cmdScore), sub: cmdLabel, icon: '🛢️' });
+      gauges.push({ label: 'Commodities', score: Math.round(cmdScore), sub: cmdLabel, icon: '🛢️', url: fredUrl('DCOILWTICO'), sources: ['WTI Crude', 'Henry Hub Gas', 'Gold London Fix'] });
     }
 
     // 8. Labor Strength: low unemployment + low claims = strong (invert for score)
@@ -1766,7 +1774,7 @@ function renderMarketIndicators(mkt, sent) {
     ]);
     if (labScore !== null) {
       var labLabel = labScore >= 70 ? 'Strong' : labScore >= 40 ? 'Softening' : 'Weak';
-      gauges.push({ label: 'Labor Market', score: Math.round(labScore), sub: labLabel, icon: '👷' });
+      gauges.push({ label: 'Labor Market', score: Math.round(labScore), sub: labLabel, icon: '👷', url: fredUrl('UNRATE'), sources: ['BLS Unemployment', 'Initial Claims'] });
     }
 
     // 9. Consumer Pulse: UMich sentiment (higher = better)
@@ -1774,7 +1782,7 @@ function renderMarketIndicators(mkt, sent) {
     if (umcs !== null) {
       var conScore = Math.round(norm(umcs, 50, 100));
       var conLabel = conScore >= 70 ? 'Optimistic' : conScore >= 40 ? 'Mixed' : 'Pessimistic';
-      gauges.push({ label: 'Consumer', score: conScore, sub: umcs.toFixed(1) + ' index', icon: '🛒' });
+      gauges.push({ label: 'Consumer', score: conScore, sub: umcs.toFixed(1) + ' index', icon: '🛒', url: fredUrl('UMCSENT'), sources: ['U. Michigan Sentiment'] });
     }
 
     // ── Render gauge cards ──
@@ -1801,11 +1809,13 @@ function renderMarketIndicators(mkt, sent) {
     var gHtml = '';
     gauges.forEach(function(g, idx) {
       var c = gaugeColor(g.score);
-      gHtml += '<div class="gauge-card" style="--gauge-accent:' + c + ';animation-delay:' + (idx * 0.06) + 's;">';
+      var srcText = (g.sources || []).join(' · ');
+      gHtml += '<a class="gauge-card" href="' + escHtml(g.url || '#') + '" target="_blank" rel="noopener" style="--gauge-accent:' + c + ';animation-delay:' + (idx * 0.06) + 's;">';
       gHtml += renderArcGauge(g.score, c, 120);
       gHtml += '<div class="gauge-card-label">' + g.icon + ' ' + escHtml(g.label) + '</div>';
       gHtml += '<div class="gauge-card-sub">' + escHtml(g.sub) + '</div>';
-      gHtml += '</div>';
+      gHtml += '<div class="gauge-card-sources">' + escHtml(srcText) + ' ↗</div>';
+      gHtml += '</a>';
     });
     gaugeEl.innerHTML = gHtml;
   } else if (gaugeEl) {
