@@ -125,7 +125,7 @@ function loadMore() {
 
 function renderArticle(a) {
   const div = document.createElement('div');
-  div.className = `article-card${a.entity_id === 'dobbs-group' ? ' self' : ''}${a.priority ? ' priority' : ''}`;
+  div.className = `article-card${a.entity_id === 'dobbs-group' ? ' self' : ''}`;
 
   const isSelf = a.entity_id === 'dobbs-group';
   const pubDate = a.pub_date ? new Date(a.pub_date) : null;
@@ -136,7 +136,6 @@ function renderArticle(a) {
     <div class="article-header">
       <a href="${escHtml(a.link)}" target="_blank" rel="noopener" class="article-title">${escHtml(a.title)}</a>
       <div class="article-badges">
-        ${a.priority ? '<span class="priority-badge">RATE</span>' : ''}
         <span class="sentiment-badge sentiment-${a.sentiment_label}">${a.sentiment_label}</span>
       </div>
     </div>
@@ -426,8 +425,8 @@ function switchTab(tabName) {
 
   // Lazy load tab data
   if (tabName === 'brief') loadBrief();
-  if (tabName === 'news') { loadArticles(); loadPriorityArticles(); }
-  if (tabName === 'fin-news') loadFinArticles();
+  if (tabName === 'news') loadArticles();
+  if (tabName === 'fin-news') { loadFinArticles(); loadPriorityArticles(); }
   if (tabName === 'stats') { loadStats(); loadCustomEntities(); }
   if (tabName === 'aum') loadAum();
   if (tabName === 'market') loadMarketIndicators();
@@ -482,40 +481,47 @@ async function triggerGovCrawl() {
   }
 }
 
-// ── Priority Articles ────────────────────────────────────
+// ── Priority Articles (compact strip in Financial News) ──
 async function loadPriorityArticles() {
   try {
-    const res = await apiFetch('/api/articles?priority=true&limit=10');
-    const articles = await res.json();
+    var res = await apiFetch('/api/articles?priority=true&limit=8');
+    var articles = await res.json();
+    var section = document.getElementById('prioritySection');
+    var container = document.getElementById('priorityArticles');
+    var countEl = document.getElementById('priorityCount');
 
-    const section = document.getElementById('prioritySection');
-    const container = document.getElementById('priorityArticles');
-
-    if (articles.length === 0) {
+    if (!articles || articles.length === 0) {
       section.style.display = 'none';
       return;
     }
 
     section.style.display = 'block';
-    container.innerHTML = '';
-    for (const a of articles) {
-      const div = document.createElement('div');
-      div.className = 'priority-card';
-      const pubDate = a.pub_date ? new Date(a.pub_date) : null;
-      const timeAgo = pubDate ? getTimeAgo(pubDate) : '';
-      div.innerHTML = `
-        <a href="${escHtml(a.link)}" target="_blank" rel="noopener" class="priority-title">${escHtml(a.title)}</a>
-        <div class="priority-meta">
-          <span class="entity-tag">${escHtml(a.entity_name)}</span>
-          <span>${escHtml(a.source)}</span>
-          <span>${timeAgo}</span>
-          <span class="sentiment-badge sentiment-${a.sentiment_label}">${a.sentiment_label}</span>
-        </div>
-      `;
-      container.appendChild(div);
-    }
+    countEl.textContent = articles.length + ' articles';
+    var html = '';
+    articles.forEach(function(a) {
+      var timeAgo = a.pub_date ? getTimeAgo(new Date(a.pub_date)) : '';
+      var sentColor = a.sentiment_label === 'positive' ? 'var(--positive)' : a.sentiment_label === 'negative' ? 'var(--negative)' : 'var(--text-muted)';
+      html += '<div class="priority-strip-item">';
+      html += '<span class="priority-strip-dot" style="background:' + sentColor + '"></span>';
+      html += '<a href="' + escHtml(a.link) + '" target="_blank" rel="noopener" class="priority-strip-link">' + escHtml(a.title) + '</a>';
+      html += '<span class="priority-strip-meta">' + escHtml(a.source || '') + ' · ' + timeAgo + '</span>';
+      html += '</div>';
+    });
+    container.innerHTML = html;
   } catch (err) {
     console.error('Failed to load priority articles:', err);
+  }
+}
+
+function togglePriorityStrip() {
+  var body = document.getElementById('priorityArticles');
+  var chevron = document.getElementById('priorityChevron');
+  if (body.style.display === 'none') {
+    body.style.display = 'block';
+    chevron.innerHTML = '&#9660;';
+  } else {
+    body.style.display = 'none';
+    chevron.innerHTML = '&#9654;';
   }
 }
 
@@ -1493,9 +1499,9 @@ function renderBrief(brief) {
   html += '<div class="empty" style="font-size:12px">Loading social data...</div>';
   html += '</div>';
 
-  // Themes & Trends
+  // Trending Topics
   html += '<div class="brief-card brief-clickable" style="animation-delay:0.75s" onclick="switchTab(\'trends\')">';
-  html += '<div class="brief-card-header"><span class="brief-card-title">\uD83C\uDF10 Themes</span></div>';
+  html += '<div class="brief-card-header"><span class="brief-card-title">\uD83D\uDD25 Trending Topics</span></div>';
   if (brief.key_themes.length > 0) {
     html += '<div class="themes-grid">';
     brief.key_themes.forEach(function(t, i) {
@@ -1503,7 +1509,7 @@ function renderBrief(brief) {
     });
     html += '</div>';
   } else {
-    html += '<div class="empty" style="font-size:12px">No themes extracted.</div>';
+    html += '<div class="empty" style="font-size:12px">No trending topics yet.</div>';
   }
   html += '</div>';
 

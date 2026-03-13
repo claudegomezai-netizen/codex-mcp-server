@@ -51,13 +51,6 @@
 
   <!-- ── Competitor News Tab ───────────────────── -->
   <section id="tab-news" class="tab-content">
-    <div id="prioritySection" class="priority-section" style="display:none;">
-      <div class="priority-header">
-        <span class="priority-icon">&#9733;</span>
-        Priority: Interest Rate &amp; Monetary Policy
-      </div>
-      <div id="priorityArticles" class="priority-articles"></div>
-    </div>
     <div class="filters v2-filter-bar">
       <div class="filter-group">
         <label>Company</label>
@@ -148,6 +141,14 @@
         <label>Search</label>
         <input type="text" id="filterFinSearch" placeholder="Search financial news..." oninput="debounceFinSearch()">
       </div>
+    </div>
+    <div id="prioritySection" class="priority-strip" style="display:none;">
+      <div class="priority-strip-header" onclick="togglePriorityStrip()">
+        <span>&#9733; Fed &amp; Rate Watch</span>
+        <span id="priorityCount" class="priority-strip-count"></span>
+        <span id="priorityChevron" class="priority-strip-chevron">&#9660;</span>
+      </div>
+      <div id="priorityArticles" class="priority-strip-body"></div>
     </div>
     <div id="finArticlesList" class="articles-list">
       <div class="empty">Click "Crawl Financial News" to fetch articles from top financial sources.</div>
