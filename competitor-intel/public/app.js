@@ -1655,22 +1655,161 @@ async function loadMarketIndicators() {
 }
 
 function renderMarketIndicators(mkt, sent) {
-  // KPI strip summary
-  var kpiEl = document.getElementById('marketKpiStrip');
-  if (kpiEl) {
-    var nSeries = (mkt.fred_series || []).length;
-    var nCats = {};
-    (mkt.fred_series || []).forEach(function(s) { nCats[s.category || 'Other'] = true; });
-    var catCount = Object.keys(nCats).length;
-    var fgKpi = mkt.fear_greed ? mkt.fear_greed.score : '—';
-    var fgColor = !mkt.fear_greed ? '' : mkt.fear_greed.score <= 25 ? 'kpi-negative' : mkt.fear_greed.score >= 55 ? 'kpi-positive' : 'kpi-neutral';
-    var ysKpi = mkt.yield_spread !== null && mkt.yield_spread !== undefined ? (mkt.yield_spread > 0 ? '+' : '') + mkt.yield_spread + '%' : '—';
-    var ysColor = mkt.yield_spread === null ? '' : mkt.yield_spread < 0 ? 'kpi-negative' : 'kpi-positive';
-    kpiEl.innerHTML =
-      '<div class="kpi-card"><div class="kpi-label">Total Indicators</div><div class="kpi-value">' + nSeries + '</div><div class="kpi-delta kpi-neutral">' + catCount + ' categories</div></div>' +
-      '<div class="kpi-card"><div class="kpi-label">Fear & Greed</div><div class="kpi-value ' + fgColor + '">' + fgKpi + '</div><div class="kpi-delta kpi-neutral">' + escHtml((mkt.fear_greed || {}).rating || '—') + '</div></div>' +
-      '<div class="kpi-card"><div class="kpi-label">Yield Spread (10Y-2Y)</div><div class="kpi-value ' + ysColor + '">' + ysKpi + '</div><div class="kpi-delta kpi-neutral">' + (mkt.yield_spread < 0 ? 'Inverted' : 'Normal') + '</div></div>' +
-      '<div class="kpi-card"><div class="kpi-label">Last Updated</div><div class="kpi-value" style="font-size:16px;">' + (mkt.updated_at ? formatDateTime(mkt.updated_at) : '—') + '</div></div>';
+  // ── Composite Gauge Dashboard ──
+  var gaugeEl = document.getElementById('marketGaugeStrip');
+  if (gaugeEl && mkt.fred_series && mkt.fred_series.length > 0) {
+    // Helper: find latest value by series_id
+    function fredVal(id) {
+      var s = mkt.fred_series.find(function(x) { return x.series_id === id; });
+      return s ? s.latest_value : null;
+    }
+    // Helper: clamp & normalize value to 0-100
+    function norm(val, lo, hi) {
+      if (val === null || val === undefined) return null;
+      return Math.max(0, Math.min(100, ((val - lo) / (hi - lo)) * 100));
+    }
+    // Helper: average non-null values
+    function avg(arr) {
+      var vals = arr.filter(function(v) { return v !== null; });
+      if (vals.length === 0) return null;
+      return vals.reduce(function(a, b) { return a + b; }, 0) / vals.length;
+    }
+
+    // ── Compute composite scores (0 = bad/risk, 100 = good/calm) ──
+    var gauges = [];
+
+    // 1. Fear & Greed (already 0-100)
+    if (mkt.fear_greed) {
+      gauges.push({
+        label: 'Fear & Greed',
+        score: mkt.fear_greed.score,
+        sub: mkt.fear_greed.rating,
+        icon: '😰'
+      });
+    }
+
+    // 2. Market Risk: VIX (invert: low=calm=100) + Stress Index (invert)
+    var vix = fredVal('VIXCLS');
+    var stress = fredVal('STLFSI4');
+    var riskScore = avg([
+      vix !== null ? 100 - norm(vix, 10, 45) : null,
+      stress !== null ? 100 - norm(stress, -1.5, 4) : null
+    ]);
+    if (riskScore !== null) {
+      var riskLabel = riskScore >= 70 ? 'Low Risk' : riskScore >= 40 ? 'Moderate' : 'Elevated';
+      gauges.push({ label: 'Market Risk', score: Math.round(riskScore), sub: riskLabel, icon: '⚡' });
+    }
+
+    // 3. Credit Health: Invert spreads (tight=good=100)
+    var hyOas = fredVal('BAMLH0A0HYM2');
+    var bbb = fredVal('BAMLC0A4CBBB');
+    var aaa = fredVal('BAMLC0A1CAAA');
+    var creditScore = avg([
+      hyOas !== null ? 100 - norm(hyOas, 2.5, 10) : null,
+      bbb !== null ? 100 - norm(bbb, 0.8, 4) : null,
+      aaa !== null ? 100 - norm(aaa, 0.3, 2.5) : null
+    ]);
+    if (creditScore !== null) {
+      var crLabel = creditScore >= 70 ? 'Tight' : creditScore >= 40 ? 'Normal' : 'Widening';
+      gauges.push({ label: 'Credit Health', score: Math.round(creditScore), sub: crLabel, icon: '🔗' });
+    }
+
+    // 4. Yield Curve: 10Y-2Y spread (positive=normal=good)
+    var t10y2y = fredVal('T10Y2Y');
+    if (t10y2y !== null) {
+      var ycScore = Math.round(norm(t10y2y, -1.0, 2.5));
+      var ycLabel = t10y2y < 0 ? 'Inverted' : t10y2y < 0.5 ? 'Flat' : 'Steep';
+      gauges.push({ label: 'Yield Curve', score: ycScore, sub: (t10y2y > 0 ? '+' : '') + t10y2y.toFixed(2) + '% spread', icon: '📐' });
+    }
+
+    // 5. Inflation Pulse: distance from 2% target (on target = 100)
+    var be10 = fredVal('T10YIE');
+    var be5 = fredVal('T5YIE');
+    var inflScore = avg([
+      be10 !== null ? Math.max(0, 100 - Math.abs(be10 - 2.0) * 40) : null,
+      be5 !== null ? Math.max(0, 100 - Math.abs(be5 - 2.0) * 40) : null
+    ]);
+    if (inflScore !== null) {
+      var iVal = be10 || be5;
+      var iLabel = iVal > 2.8 ? 'Hot' : iVal > 2.2 ? 'Above Target' : iVal >= 1.8 ? 'On Target' : 'Below Target';
+      gauges.push({ label: 'Inflation Pulse', score: Math.round(inflScore), sub: iLabel, icon: '🔥' });
+    }
+
+    // 6. Dollar Strength: USD Index (normalize around 90-120 range, mid=neutral)
+    var dxy = fredVal('DTWEXBGS');
+    if (dxy !== null) {
+      var dolScore = Math.round(norm(dxy, 95, 135));
+      var dolLabel = dolScore >= 70 ? 'Strong' : dolScore >= 40 ? 'Neutral' : 'Weak';
+      gauges.push({ label: 'USD Strength', score: dolScore, sub: dxy.toFixed(1) + ' index', icon: '💵' });
+    }
+
+    // 7. Commodities Heat: Oil + Gas + Gold momentum (rising prices = hot)
+    var wti = fredVal('DCOILWTICO');
+    var gas = fredVal('DHHNGSP');
+    var gold = fredVal('GOLDAMGBD228NLBM');
+    var cmdScore = avg([
+      wti !== null ? norm(wti, 40, 120) : null,
+      gas !== null ? norm(gas, 1.5, 6.0) : null,
+      gold !== null ? norm(gold, 1500, 3000) : null
+    ]);
+    if (cmdScore !== null) {
+      var cmdLabel = cmdScore >= 70 ? 'Hot' : cmdScore >= 40 ? 'Moderate' : 'Cool';
+      gauges.push({ label: 'Commodities', score: Math.round(cmdScore), sub: cmdLabel, icon: '🛢️' });
+    }
+
+    // 8. Labor Strength: low unemployment + low claims = strong (invert for score)
+    var unemp = fredVal('UNRATE');
+    var claims = fredVal('ICSA');
+    var labScore = avg([
+      unemp !== null ? 100 - norm(unemp, 3.0, 8.0) : null,
+      claims !== null ? 100 - norm(claims, 180000, 400000) : null
+    ]);
+    if (labScore !== null) {
+      var labLabel = labScore >= 70 ? 'Strong' : labScore >= 40 ? 'Softening' : 'Weak';
+      gauges.push({ label: 'Labor Market', score: Math.round(labScore), sub: labLabel, icon: '👷' });
+    }
+
+    // 9. Consumer Pulse: UMich sentiment (higher = better)
+    var umcs = fredVal('UMCSENT');
+    if (umcs !== null) {
+      var conScore = Math.round(norm(umcs, 50, 100));
+      var conLabel = conScore >= 70 ? 'Optimistic' : conScore >= 40 ? 'Mixed' : 'Pessimistic';
+      gauges.push({ label: 'Consumer', score: conScore, sub: umcs.toFixed(1) + ' index', icon: '🛒' });
+    }
+
+    // ── Render gauge cards ──
+    function gaugeColor(score) {
+      if (score <= 25) return '#ef4444';
+      if (score <= 40) return '#f97316';
+      if (score <= 55) return '#eab308';
+      if (score <= 75) return '#22c55e';
+      return '#16a34a';
+    }
+    function renderArcGauge(score, color, size) {
+      var r = size * 0.38;
+      var arcLen = Math.PI * r;
+      var dashOn = (score / 100) * arcLen;
+      var cx = size / 2, cy = size * 0.52;
+      var x1 = cx - r, x2 = cx + r;
+      return '<svg viewBox="0 0 ' + size + ' ' + Math.round(size * 0.65) + '" width="' + size + '" height="' + Math.round(size * 0.65) + '">' +
+        '<path d="M ' + x1 + ' ' + cy + ' A ' + r + ' ' + r + ' 0 0 1 ' + x2 + ' ' + cy + '" fill="none" stroke="var(--border)" stroke-width="8" stroke-linecap="round"/>' +
+        '<path d="M ' + x1 + ' ' + cy + ' A ' + r + ' ' + r + ' 0 0 1 ' + x2 + ' ' + cy + '" fill="none" stroke="' + color + '" stroke-width="8" stroke-linecap="round" stroke-dasharray="' + dashOn.toFixed(1) + ' ' + arcLen.toFixed(1) + '"/>' +
+        '<text x="' + cx + '" y="' + (cy - 4) + '" text-anchor="middle" fill="' + color + '" font-size="18" font-weight="700">' + score + '</text>' +
+        '</svg>';
+    }
+
+    var gHtml = '';
+    gauges.forEach(function(g, idx) {
+      var c = gaugeColor(g.score);
+      gHtml += '<div class="gauge-card" style="--gauge-accent:' + c + ';animation-delay:' + (idx * 0.06) + 's;">';
+      gHtml += renderArcGauge(g.score, c, 120);
+      gHtml += '<div class="gauge-card-label">' + g.icon + ' ' + escHtml(g.label) + '</div>';
+      gHtml += '<div class="gauge-card-sub">' + escHtml(g.sub) + '</div>';
+      gHtml += '</div>';
+    });
+    gaugeEl.innerHTML = gHtml;
+  } else if (gaugeEl) {
+    gaugeEl.innerHTML = '';
   }
 
   // Fear & Greed gauge
