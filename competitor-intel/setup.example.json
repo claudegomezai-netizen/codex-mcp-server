@@ -1,0 +1,64 @@
+{
+  "company": {
+    "id": "acme-corp",
+    "name": "Acme Corporation",
+    "subtitle": "Acme Corporation | Enterprise Division",
+    "website": "https://www.acme.com",
+    "contact_email": "alerts@acme.com",
+    "industry": "Investment Consulting",
+    "ai_context": "You are an analyst at an institutional investment consulting firm (Acme Corporation)."
+  },
+  "search_queries": [
+    "\"Acme Corporation\" consulting",
+    "\"Acme Corp\" investment",
+    "\"Acme\" institutional advisory"
+  ],
+  "competitors": [
+    {
+      "id": "competitor-one",
+      "name": "Competitor One Inc.",
+      "search_queries": [
+        "\"Competitor One\" consulting",
+        "\"Competitor One\" advisory"
+      ],
+      "website": "https://www.competitor-one.com"
+    },
+    {
+      "id": "competitor-two",
+      "name": "Competitor Two LLC",
+      "search_queries": [
+        "\"Competitor Two\" consulting"
+      ],
+      "website": "https://www.competitor-two.com"
+    }
+  ],
+  "priority_keywords": [
+    "interest rate", "federal reserve", "fed funds", "rate cut",
+    "rate hike", "monetary policy", "fomc", "basis points"
+  ],
+  "prediction_keywords": [
+    "Federal Reserve", "interest rate", "SEC", "oil price",
+    "inflation", "GDP", "unemployment", "recession"
+  ],
+  "sec_keyword_categories": {
+    "critical": ["enforcement", "fraud", "investigation", "violation", "cease and desist"],
+    "warning": ["deficiency", "compliance", "fiduciary", "custodian risk"],
+    "monitor": ["amendment", "annual report", "registration"]
+  },
+  "seed_aum_data": [
+    {
+      "entity_name": "Competitor One Inc.",
+      "aum_billions": 500,
+      "category": "Competitors",
+      "year": 2024
+    }
+  ],
+  "financial_news_sources": [
+    { "name": "Bloomberg", "url": "https://www.bloomberg.com", "rss": "https://news.google.com/rss/search?q=site:bloomberg.com+finance" },
+    { "name": "Reuters Finance", "url": "https://www.reuters.com/finance", "rss": "https://news.google.com/rss/search?q=site:reuters.com+finance" }
+  ],
+  "deploy": {
+    "netlify_site_name": "my-competitor-intel",
+    "dashboard_url": "https://my-competitor-intel.netlify.app"
+  }
+}
