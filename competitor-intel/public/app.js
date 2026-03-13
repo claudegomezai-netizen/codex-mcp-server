@@ -1523,6 +1523,18 @@ function renderBrief(brief) {
   }
   html += '</div>';
 
+  // Form ADV (async-loaded)
+  html += '<div class="brief-card brief-clickable" id="briefAdvCard" style="animation-delay:0.85s" onclick="switchTab(\'adv\')">';
+  html += '<div class="brief-card-header"><span class="brief-card-title">\uD83D\uDCCB Form ADV</span></div>';
+  html += '<div class="empty" style="font-size:12px">Loading ADV data...</div>';
+  html += '</div>';
+
+  // Financial News (async-loaded)
+  html += '<div class="brief-card brief-clickable" id="briefFinNews" style="animation-delay:0.9s" onclick="switchTab(\'fin-news\')">';
+  html += '<div class="brief-card-header"><span class="brief-card-title">\uD83D\uDCB0 Financial Headlines</span></div>';
+  html += '<div class="empty" style="font-size:12px">Loading financial news...</div>';
+  html += '</div>';
+
   html += '</div>'; // end secondary grid
 
   container.innerHTML = html;
@@ -1538,6 +1550,9 @@ function renderBrief(brief) {
 
   // Async-load social buzz into brief card
   loadBriefSocialBuzz();
+  // Async-load ADV + Financial News
+  loadBriefAdv();
+  loadBriefFinNews();
 }
 
 async function loadBriefSocialBuzz() {
@@ -1563,6 +1578,79 @@ async function loadBriefSocialBuzz() {
   } catch (err) {
     var emptyEl = card.querySelector('.empty');
     if (emptyEl) emptyEl.textContent = 'Social data unavailable.';
+  }
+}
+
+// ── Brief: Form ADV card ────────────────────────────────
+async function loadBriefAdv() {
+  var card = document.getElementById('briefAdvCard');
+  if (!card) return;
+  try {
+    var res = await apiFetch('/api/adv');
+    var analyses = await res.json();
+    if (!analyses || analyses.length === 0) {
+      card.querySelector('.empty').textContent = 'No ADV data. Use the Form ADV tab to scan.';
+      return;
+    }
+    var active = analyses.filter(function(a) { return a.registration_status === 'ACTIVE'; });
+    var withDisc = analyses.filter(function(a) { return a.has_disclosures; });
+    var totalBranches = analyses.reduce(function(s, a) { return s + (a.branches_count || 0); }, 0);
+
+    var inner = '<div class="brief-card-header"><span class="brief-card-title">\uD83D\uDCCB Form ADV</span><span class="brief-card-badge" style="background:var(--surface2);color:var(--text-muted)">' + analyses.length + ' firms</span></div>';
+
+    // Mini KPI row
+    inner += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px">';
+    inner += '<div style="text-align:center;padding:6px;border-radius:8px;background:var(--surface2)"><div style="font-size:18px;font-weight:700;color:var(--positive)">' + active.length + '</div><div style="font-size:10px;color:var(--text-muted)">Active RIAs</div></div>';
+    inner += '<div style="text-align:center;padding:6px;border-radius:8px;background:var(--surface2)"><div style="font-size:18px;font-weight:700;color:' + (withDisc.length > 0 ? 'var(--negative)' : 'var(--text-muted)') + '">' + withDisc.length + '</div><div style="font-size:10px;color:var(--text-muted)">Disclosures</div></div>';
+    inner += '<div style="text-align:center;padding:6px;border-radius:8px;background:var(--surface2)"><div style="font-size:18px;font-weight:700;color:var(--accent)">' + totalBranches + '</div><div style="font-size:10px;color:var(--text-muted)">Branches</div></div>';
+    inner += '</div>';
+
+    // List firms with status
+    var sorted = analyses.slice().sort(function(a, b) { return (a.firm_name || '').localeCompare(b.firm_name || ''); });
+    sorted.slice(0, 6).forEach(function(a) {
+      var statusColor = a.registration_status === 'ACTIVE' ? 'var(--positive)' : 'var(--negative)';
+      var discFlag = a.has_disclosures ? ' <span style="color:var(--negative);font-size:10px" title="Has disclosures">\u26A0</span>' : '';
+      inner += '<div class="comp-row"><span class="comp-name">' + escHtml(a.firm_name || a.entity_name || 'Unknown') + discFlag + '</span><span class="comp-count" style="color:' + statusColor + ';font-size:11px">' + escHtml(a.registration_status || '?') + '</span></div>';
+    });
+    if (analyses.length > 6) {
+      inner += '<div style="text-align:center;font-size:11px;color:var(--text-muted);margin-top:4px">+' + (analyses.length - 6) + ' more</div>';
+    }
+    card.innerHTML = inner;
+  } catch (err) {
+    var emptyEl = card.querySelector('.empty');
+    if (emptyEl) emptyEl.textContent = 'ADV data unavailable.';
+  }
+}
+
+// ── Brief: Financial Headlines card ─────────────────────
+async function loadBriefFinNews() {
+  var card = document.getElementById('briefFinNews');
+  if (!card) return;
+  try {
+    var res = await apiFetch('/api/fin-articles?limit=5');
+    var articles = await res.json();
+    if (!articles || articles.length === 0) {
+      card.querySelector('.empty').textContent = 'No financial news. Use the Financial News tab to crawl.';
+      return;
+    }
+    var inner = '<div class="brief-card-header"><span class="brief-card-title">\uD83D\uDCB0 Financial Headlines</span><span class="brief-card-badge" style="background:var(--surface2);color:var(--text-muted)">' + articles.length + ' latest</span></div>';
+
+    articles.forEach(function(a) {
+      var sentColor = a.sentiment_label === 'positive' ? 'var(--positive)' : a.sentiment_label === 'negative' ? 'var(--negative)' : 'var(--text-muted)';
+      var sentDot = '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' + sentColor + ';margin-right:6px;flex-shrink:0"></span>';
+      var timeAgo = formatDateTime(a.pub_date);
+      inner += '<div style="display:flex;align-items:flex-start;gap:4px;padding:5px 0;border-bottom:1px solid var(--border)">';
+      inner += sentDot;
+      inner += '<div style="flex:1;min-width:0">';
+      inner += '<div style="font-size:12px;font-weight:500;line-height:1.3;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical"><a href="' + escHtml(a.link) + '" target="_blank" rel="noopener" style="color:var(--text-primary);text-decoration:none">' + escHtml(a.title) + '</a></div>';
+      inner += '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + escHtml(a.source_name || a.source_domain || '') + ' · ' + timeAgo + '</div>';
+      inner += '</div></div>';
+    });
+
+    card.innerHTML = inner;
+  } catch (err) {
+    var emptyEl = card.querySelector('.empty');
+    if (emptyEl) emptyEl.textContent = 'Financial news unavailable.';
   }
 }
 
