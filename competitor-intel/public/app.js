@@ -1348,17 +1348,7 @@ function renderBrief(brief) {
   var gColor = 'hsl(' + gHue + ', 70%, 50%)';
   var mpNeedleAngle = 180 - normalized * 180;
   var mpNeedleLen = arcR * 0.75;
-  // Brief Market Pulse tick marks
-  var mpTicks = '';
-  for (var mpT = 0; mpT <= 100; mpT += 25) {
-    var mpTa = Math.PI - (mpT / 100) * Math.PI;
-    var mpTx1 = 70 + (arcR + 3) * Math.cos(mpTa);
-    var mpTy1 = 72 - (arcR + 3) * Math.sin(mpTa);
-    var mpTx2 = 70 + (arcR + 7) * Math.cos(mpTa);
-    var mpTy2 = 72 - (arcR + 7) * Math.sin(mpTa);
-    mpTicks += '<line x1="' + mpTx1.toFixed(1) + '" y1="' + mpTy1.toFixed(1) + '" x2="' + mpTx2.toFixed(1) + '" y2="' + mpTy2.toFixed(1) + '" stroke="var(--text-muted)" stroke-width="1.5" opacity="0.35"/>';
-  }
-  html += '<div style="text-align:center"><svg width="160" height="90" viewBox="0 0 160 90"><defs><filter id="mpGlow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>' + mpTicks + '<path d="M 18 78 A ' + arcR + ' ' + arcR + ' 0 0 1 142 78" fill="none" stroke="var(--border)" stroke-width="7" stroke-linecap="round" opacity="0.4"/><path id="gaugeFill" d="M 18 78 A ' + arcR + ' ' + arcR + ' 0 0 1 142 78" fill="none" stroke="' + gColor + '" stroke-width="7" stroke-linecap="round" stroke-dasharray="' + arcL + '" stroke-dashoffset="' + arcL + '" filter="url(#mpGlow)" style="transition:stroke-dashoffset 1.4s cubic-bezier(0.22, 1, 0.36, 1)"/><g class="brief-needle" style="transform:rotate(180deg);transform-origin:80px 78px;transition:transform 1.6s cubic-bezier(0.34, 1.56, 0.64, 1)" data-target-angle="' + mpNeedleAngle + '"><line x1="80" y1="78" x2="' + (80 - mpNeedleLen) + '" y2="78" stroke="' + gColor + '" stroke-width="2" stroke-linecap="round"/><circle cx="80" cy="78" r="3.5" fill="' + gColor + '"/><circle cx="80" cy="78" r="1.5" fill="var(--bg, #0f0f0f)"/></g><text x="80" y="70" text-anchor="middle" fill="var(--text)" font-size="18" font-weight="800">' + gaugeScore.toFixed(2) + '</text><text x="80" y="86" text-anchor="middle" fill="var(--text-muted)" font-size="9">' + s.total_articles + ' articles</text></svg></div>';
+  html += '<div style="text-align:center"><svg width="160" height="90" viewBox="0 0 160 90"><defs><filter id="mpGlow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><path d="M 18 78 A ' + arcR + ' ' + arcR + ' 0 0 1 142 78" fill="none" stroke="var(--border)" stroke-width="7" stroke-linecap="round" opacity="0.4"/><path id="gaugeFill" d="M 18 78 A ' + arcR + ' ' + arcR + ' 0 0 1 142 78" fill="none" stroke="' + gColor + '" stroke-width="7" stroke-linecap="round" stroke-dasharray="' + arcL + '" stroke-dashoffset="' + arcL + '" filter="url(#mpGlow)" style="transition:stroke-dashoffset 1.4s cubic-bezier(0.22, 1, 0.36, 1)"/><g class="brief-needle" style="transform:rotate(180deg);transform-origin:80px 78px;transition:transform 1.6s cubic-bezier(0.34, 1.56, 0.64, 1)" data-target-angle="' + mpNeedleAngle + '"><line x1="80" y1="78" x2="' + (80 - mpNeedleLen) + '" y2="78" stroke="' + gColor + '" stroke-width="2" stroke-linecap="round"/><circle cx="80" cy="78" r="3.5" fill="' + gColor + '"/><circle cx="80" cy="78" r="1.5" fill="var(--bg, #0f0f0f)"/></g><text x="80" y="70" text-anchor="middle" fill="var(--text)" font-size="18" font-weight="800">' + gaugeScore.toFixed(2) + '</text><text x="80" y="86" text-anchor="middle" fill="var(--text-muted)" font-size="9">' + s.total_articles + ' articles</text></svg></div>';
   html += '<div class="sentiment-stack"><div class="seg-pos" style="width:' + s.positive_pct + '%"></div><div class="seg-neu" style="width:' + s.neutral_pct + '%"></div><div class="seg-neg" style="width:' + s.negative_pct + '%"></div></div>';
   html += '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);margin-top:3px"><span style="color:var(--positive)">' + s.positive_pct + '% pos</span><span>' + s.neutral_pct + '% neu</span><span style="color:var(--negative)">' + s.negative_pct + '% neg</span></div>';
 
@@ -1927,19 +1917,8 @@ function renderMarketIndicators(mkt, sent) {
       // Needle angle: 0% = 180deg (left), 100% = 0deg (right)
       var needleAngle = 180 - (score / 100) * 180;
       var needleLen = r * 0.78;
-      // Tick marks (every 20%)
-      var ticks = '';
-      for (var t = 0; t <= 100; t += 20) {
-        var tAngle = (Math.PI - (t / 100) * Math.PI);
-        var tx1 = cx + (r + 4) * Math.cos(tAngle);
-        var ty1 = cy - (r + 4) * Math.sin(tAngle);
-        var tx2 = cx + (r + 9) * Math.cos(tAngle);
-        var ty2 = cy - (r + 9) * Math.sin(tAngle);
-        ticks += '<line x1="' + tx1.toFixed(1) + '" y1="' + ty1.toFixed(1) + '" x2="' + tx2.toFixed(1) + '" y2="' + ty2.toFixed(1) + '" stroke="var(--text-muted)" stroke-width="1.5" opacity="0.4"/>';
-      }
       return '<svg class="gauge-svg-animated" viewBox="0 0 ' + size + ' ' + h + '" width="' + size + '" height="' + h + '" data-score="' + score + '">' +
         '<defs><filter id="glow' + score + '"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>' +
-        ticks +
         '<path d="M ' + x1 + ' ' + cy + ' A ' + r + ' ' + r + ' 0 0 1 ' + x2 + ' ' + cy + '" fill="none" stroke="var(--border)" stroke-width="7" stroke-linecap="round" opacity="0.5"/>' +
         '<path class="gauge-arc-fill" d="M ' + x1 + ' ' + cy + ' A ' + r + ' ' + r + ' 0 0 1 ' + x2 + ' ' + cy + '" fill="none" stroke="' + color + '" stroke-width="7" stroke-linecap="round" stroke-dasharray="' + arcLen.toFixed(1) + '" stroke-dashoffset="' + arcLen.toFixed(1) + '" data-target="' + (arcLen - (score / 100) * arcLen).toFixed(1) + '" filter="url(#glow' + score + ')"/>' +
         '<g class="gauge-needle" transform="rotate(' + 180 + ',' + cx + ',' + cy + ')" data-target-angle="' + needleAngle + '" data-cx="' + cx + '" data-cy="' + cy + '">' +
@@ -1977,20 +1956,6 @@ function renderMarketIndicators(mkt, sent) {
     const fgArcLen = 251.2;
     const fgNeedleAngle = 180 - (fg.score / 100) * 180;
     const fgNeedleLen = 62;
-    // Build tick marks for FG gauge
-    var fgTicks = '';
-    for (var ft = 0; ft <= 100; ft += 10) {
-      var ftAngle = (Math.PI - (ft / 100) * Math.PI);
-      var ftx1 = 100 + 85 * Math.cos(ftAngle);
-      var fty1 = 100 - 85 * Math.sin(ftAngle);
-      var ftx2 = 100 + (ft % 20 === 0 ? 93 : 89) * Math.cos(ftAngle);
-      var fty2 = 100 - (ft % 20 === 0 ? 93 : 89) * Math.sin(ftAngle);
-      fgTicks += '<line x1="' + ftx1.toFixed(1) + '" y1="' + fty1.toFixed(1) + '" x2="' + ftx2.toFixed(1) + '" y2="' + fty2.toFixed(1) + '" stroke="var(--text-muted)" stroke-width="' + (ft % 20 === 0 ? '2' : '1') + '" opacity="0.35"/>';
-    }
-    // Zone labels
-    var fgZoneLabels = '<text x="30" y="106" text-anchor="middle" fill="var(--text-muted)" font-size="7" opacity="0.5">FEAR</text>' +
-      '<text x="100" y="46" text-anchor="middle" fill="var(--text-muted)" font-size="7" opacity="0.5">NEUTRAL</text>' +
-      '<text x="170" y="106" text-anchor="middle" fill="var(--text-muted)" font-size="7" opacity="0.5">GREED</text>';
     fgEl.innerHTML = `
       <a class="fg-card" href="https://edition.cnn.com/markets/fear-and-greed" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;">
         <div class="fg-gauge">
@@ -2005,7 +1970,6 @@ function renderMarketIndicators(mkt, sent) {
                 <stop offset="100%" stop-color="#16a34a"/>
               </linearGradient>
             </defs>
-            ${fgTicks}
             <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="var(--border)" stroke-width="10" stroke-linecap="round" opacity="0.4"/>
             <path class="gauge-arc-fill fg-arc" d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="url(#fgGrad)" stroke-width="10" stroke-linecap="round"
               stroke-dasharray="${fgArcLen}" stroke-dashoffset="${fgArcLen}" data-target="${(fgArcLen - (fg.score / 100) * fgArcLen).toFixed(1)}" filter="url(#fgGlow)"/>
@@ -2016,7 +1980,6 @@ function renderMarketIndicators(mkt, sent) {
             </g>
             <text class="gauge-score-counter" x="100" y="85" text-anchor="middle" fill="${color}" font-size="28" font-weight="800" data-target="${fg.score}">0</text>
             <text x="100" y="113" text-anchor="middle" fill="var(--text-muted)" font-size="10" class="fg-rating-text" data-rating="${escHtml(fg.rating)}">&nbsp;</text>
-            ${fgZoneLabels}
           </svg>
         </div>
         <div class="fg-meta">
