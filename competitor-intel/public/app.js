@@ -1314,7 +1314,14 @@ function renderBrief(brief) {
   const ysCls = ys != null ? (ys < 0 ? 'kpi-negative' : 'kpi-positive') : 'kpi-neutral';
   const critCount = brief.risk_alerts.filter(function(r) { return r.risk_level === 'critical'; }).length;
   const warnCount = brief.risk_alerts.filter(function(r) { return r.risk_level === 'warning'; }).length;
-  const pMoves = brief.personnel_moves || [];
+  // Dedup personnel by name (same person can appear from multiple crawl hits)
+  var pSeenNames = {};
+  const pMoves = (brief.personnel_moves || []).filter(function(p) {
+    var key = p.person_name.toLowerCase().trim();
+    if (pSeenNames[key]) return false;
+    pSeenNames[key] = true;
+    return true;
+  });
   const aumB = brief.total_aum_billions;
 
   let html = '<div class="brief-kpi-strip">';
