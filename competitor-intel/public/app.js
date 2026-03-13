@@ -1315,9 +1315,11 @@ function renderBrief(brief) {
   const critCount = brief.risk_alerts.filter(function(r) { return r.risk_level === 'critical'; }).length;
   const warnCount = brief.risk_alerts.filter(function(r) { return r.risk_level === 'warning'; }).length;
   // Dedup personnel by name (same person can appear from multiple crawl hits)
+  // Skip dedup for empty names — treat them as unique entries
   var pSeenNames = {};
   const pMoves = (brief.personnel_moves || []).filter(function(p) {
     var key = p.person_name.toLowerCase().trim();
+    if (!key) return true;
     if (pSeenNames[key]) return false;
     pSeenNames[key] = true;
     return true;

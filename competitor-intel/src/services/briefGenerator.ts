@@ -210,11 +210,13 @@ export async function generateBrief(): Promise<DailyBrief> {
       filteredPersonnel = allPersonnel;
     }
     // Dedup by person name (same person can appear from multiple crawl hits)
+    // Skip dedup for empty names — treat them as unique entries
     const seenNames = new Set<string>();
     const dedupedPersonnel = filteredPersonnel
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .filter(p => {
         const key = p.person_name.toLowerCase().trim();
+        if (!key) return true; // empty name = always include
         if (seenNames.has(key)) return false;
         seenNames.add(key);
         return true;
