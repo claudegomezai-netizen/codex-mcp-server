@@ -45,7 +45,7 @@ export const ENTITIES_WITH_CIK: Array<{ name: string; cik: string }> = [
 
   // ── Hedge Funds & Alternative Managers ──
   { name: 'Bridgewater Associates', cik: '0001350694' },
-  { name: 'Citadel Advisors', cik: '0001423053' },
+  { name: 'Citadel Advisors', cik: '0001116019' },
   { name: 'Renaissance Technologies', cik: '0001037389' },
   { name: 'Two Sigma Investments', cik: '0001179392' },
   { name: 'D.E. Shaw', cik: '0001009207' },
@@ -72,7 +72,7 @@ export const ENTITIES_WITH_CIK: Array<{ name: string; cik: string }> = [
   { name: 'Baird (Robert W. Baird)', cik: '0000904495' },
   { name: 'Raymond James Financial', cik: '0000720005' },
   { name: 'LPL Financial', cik: '0001397187' },
-  { name: 'Stifel Financial', cik: '0000720005' },
+  { name: 'Stifel Financial', cik: '0000885990' },
   { name: 'Ameriprise Financial', cik: '0000820027' },
   { name: 'Edward Jones (parent: Jones Financial)', cik: '0000049196' },
 

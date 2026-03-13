@@ -777,8 +777,15 @@ header {
   margin-top: 24px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 20px;
+  animation: briefFadeUp 0.4s ease-out both;
+  animation-delay: 0.15s;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.aum-update-form:hover {
+  border-color: rgba(99,102,241,0.3);
+  box-shadow: 0 0 20px rgba(99,102,241,0.04);
 }
 .aum-update-form h3 {
   font-size: 14px;
@@ -1721,6 +1728,13 @@ header {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 20px;
+  animation: briefFadeUp 0.4s ease-out both;
+  animation-delay: 0.1s;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.custom-entities-section:hover {
+  border-color: rgba(99,102,241,0.3);
+  box-shadow: 0 0 20px rgba(99,102,241,0.04);
 }
 .custom-entities-section h3 {
   font-size: 15px;
@@ -1764,6 +1778,12 @@ header {
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: 6px;
+  animation: briefFadeUp 0.3s ease-out both;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.custom-entity-item:hover {
+  border-color: rgba(99,102,241,0.3);
+  box-shadow: 0 0 16px rgba(99,102,241,0.04);
 }
 .custom-entity-info {
   display: flex;
@@ -2776,6 +2796,7 @@ header {
 /* Personnel cards — fade + glow */
 .personnel-card {
   animation: briefFadeUp 0.4s ease-out both;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 .personnel-card:nth-child(1) { animation-delay: 0s; }
 .personnel-card:nth-child(2) { animation-delay: 0.04s; }
@@ -2783,6 +2804,10 @@ header {
 .personnel-card:nth-child(4) { animation-delay: 0.12s; }
 .personnel-card:nth-child(5) { animation-delay: 0.16s; }
 .personnel-card:nth-child(n+6) { animation-delay: 0.2s; }
+.personnel-card:hover {
+  border-color: rgba(99,102,241,0.4);
+  box-shadow: 0 0 20px rgba(99,102,241,0.06);
+}
 
 /* FINRA alerts — fade + glow */
 .finra-alert {

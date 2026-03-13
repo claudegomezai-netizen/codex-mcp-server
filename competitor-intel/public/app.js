@@ -673,13 +673,29 @@ async function loadAum() {
 
 function renderAumChart(entries) {
   const container = document.getElementById('aumChart');
+  const kpiEl = document.getElementById('aumKpi');
   if (!entries || entries.length === 0) {
-    container.innerHTML = '<div class="empty">No AUM data yet.</div>';
+    if (kpiEl) kpiEl.innerHTML = '';
+    container.innerHTML = '<div class="v2-empty">No AUM data yet. Add data manually or click "Crawl AUM (EDGAR)" to scan.</div>';
     return;
   }
 
   const sorted = [...entries].sort((a, b) => b.aum_billions - a.aum_billions);
   const maxAum = sorted[0].aum_billions;
+
+  // KPI strip
+  const totalAum = sorted.reduce((s, e) => s + (e.aum_billions || 0), 0);
+  const totalDisc = sorted.reduce((s, e) => s + (e.discretionary_billions || 0), 0);
+  const withBreakdown = sorted.filter(e => e.discretionary_billions != null || (e.asset_classes && e.asset_classes.length > 0)).length;
+  if (kpiEl) {
+    kpiEl.innerHTML = `
+      <div class="kpi-card"><div class="kpi-value">${sorted.length}</div><div class="kpi-label">Entities</div></div>
+      <div class="kpi-card"><div class="kpi-value">$${formatBillions(totalAum)}</div><div class="kpi-label">Total AUM</div></div>
+      <div class="kpi-card"><div class="kpi-value">$${formatBillions(totalDisc)}</div><div class="kpi-label">Discretionary</div></div>
+      <div class="kpi-card"><div class="kpi-value">${withBreakdown}</div><div class="kpi-label">With Breakdown</div></div>
+    `;
+  }
+
   container.innerHTML = '';
 
   for (const e of sorted) {
@@ -1309,7 +1325,7 @@ async function loadCustomEntities() {
   if (!container) return;
   const custom = (entities.custom || []);
   if (custom.length === 0) {
-    container.innerHTML = '<div class="custom-empty">No custom competitors added yet.</div>';
+    container.innerHTML = '<div class="v2-empty">No custom competitors added yet. Add a company name above to start tracking.</div>';
     return;
   }
   container.innerHTML = custom.map(e => `
@@ -2398,8 +2414,12 @@ async function loadHoldingsEntities() {
 }
 
 function formatValue(valThousands) {
-  const m = valThousands / 1000;
-  if (m >= 1000000) return '$' + (m / 1000000).toFixed(1) + 'T';
+  if (!valThousands) return '$0';
+  const m = valThousands / 1000; // millions
+  if (m >= 1000000) {
+    const t = m / 1000000;
+    return '$' + t.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + 'T';
+  }
   if (m >= 1000) return '$' + (m / 1000).toFixed(1) + 'B';
   if (m >= 1) return '$' + m.toFixed(0) + 'M';
   return '$' + valThousands.toLocaleString() + 'K';
@@ -2421,8 +2441,8 @@ function renderHoldingsGrid(allEntities) {
   const totalHoldings = allEntities.reduce((s, e) => s + (e.holdings_count || 0), 0);
   kpiEl.innerHTML = `
     <div class="kpi-card"><div class="kpi-value">${totalEntities}</div><div class="kpi-label">Entities</div></div>
-    <div class="kpi-card"><div class="kpi-value">${formatValue(totalVal)}</div><div class="kpi-label">Total 13F Value</div></div>
-    <div class="kpi-card"><div class="kpi-value">${totalHoldings.toLocaleString()}</div><div class="kpi-label">Total Holdings</div></div>
+    <div class="kpi-card"><div class="kpi-value">${formatValue(totalVal)}</div><div class="kpi-label">Aggregate 13F Value</div></div>
+    <div class="kpi-card"><div class="kpi-value">${totalHoldings.toLocaleString()}</div><div class="kpi-label">Total Positions</div></div>
   `;
 
   // Entity cards
