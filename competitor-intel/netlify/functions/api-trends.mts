@@ -1,11 +1,11 @@
 import type { Context } from '@netlify/functions';
-import { verifyAuth } from '../../src/services/auth.js';
+import { verifyAuth, unauthorizedResponse } from '../../src/services/auth.js';
 import { getTrendSnapshots } from '../../src/services/blobStore.js';
 import { captureSnapshot } from '../../src/crawlers/trendTracker.js';
 
 export default async (req: Request, context: Context) => {
-  const authError = verifyAuth(req);
-  if (authError) return authError;
+  // Auth check
+  if (!(await verifyAuth(req))) return unauthorizedResponse();
 
   if (req.method === 'POST') {
     const count = await captureSnapshot();

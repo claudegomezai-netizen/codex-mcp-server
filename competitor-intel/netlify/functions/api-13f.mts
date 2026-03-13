@@ -10,19 +10,41 @@ export default async (req: Request) => {
   const period = url.searchParams.get('period') || undefined;
 
   if (!cik) {
-    // Return all entities that have crawled data
-    const entities: Array<{ name: string; cik: string }> = [];
-    const periods: Record<string, string[]> = {};
+    // Return all entities with summary data for card display
+    const entitySummaries: Array<{
+      name: string; cik: string; periods: string[];
+      total_value_thousands: number; holdings_count: number;
+      top_holdings: Array<{ issuer: string; value_thousands: number; pct: number }>;
+      latest_period: string;
+    }> = [];
 
     for (const entity of ENTITIES_WITH_CIK) {
       const p = await getAll13FPeriods(entity.cik);
       if (p.length > 0) {
-        entities.push(entity);
-        periods[entity.cik] = p;
+        const filing = await get13FHoldings(entity.cik);
+        const totalVal = filing?.total_value_thousands || 0;
+        const holdings = filing?.holdings || [];
+        const top3 = holdings.slice(0, 3).map(h => ({
+          issuer: h.issuer,
+          value_thousands: h.value_thousands,
+          pct: totalVal > 0 ? Math.round((h.value_thousands / totalVal) * 10000) / 100 : 0,
+        }));
+        entitySummaries.push({
+          name: entity.name,
+          cik: entity.cik,
+          periods: p,
+          total_value_thousands: totalVal,
+          holdings_count: holdings.length,
+          top_holdings: top3,
+          latest_period: p[0],
+        });
       }
     }
 
-    return new Response(JSON.stringify({ entities, periods }), {
+    // Sort by total value descending
+    entitySummaries.sort((a, b) => b.total_value_thousands - a.total_value_thousands);
+
+    return new Response(JSON.stringify({ entities: entitySummaries }), {
       headers: { 'Content-Type': 'application/json' },
     });
   }

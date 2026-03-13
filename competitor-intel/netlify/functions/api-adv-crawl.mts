@@ -1,10 +1,10 @@
 import type { Context } from '@netlify/functions';
-import { verifyAuth } from '../../src/services/auth.js';
+import { verifyAuth, unauthorizedResponse } from '../../src/services/auth.js';
 import { analyzeAdv } from '../../src/crawlers/advAnalyzer.js';
 
 export default async (req: Request, context: Context) => {
-  const authError = verifyAuth(req);
-  if (authError) return authError;
+  // Auth check
+  if (!(await verifyAuth(req))) return unauthorizedResponse();
 
   const url = new URL(req.url);
   const entityId = url.searchParams.get('entity') || undefined;

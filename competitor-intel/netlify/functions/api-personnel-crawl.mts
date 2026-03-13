@@ -1,10 +1,10 @@
 import type { Context } from '@netlify/functions';
-import { verifyAuth } from '../../src/services/auth.js';
+import { verifyAuth, unauthorizedResponse } from '../../src/services/auth.js';
 import { crawlPersonnel } from '../../src/crawlers/personnelCrawler.js';
 
 export default async (req: Request, context: Context) => {
-  const authError = verifyAuth(req);
-  if (authError) return authError;
+  // Auth check
+  if (!(await verifyAuth(req))) return unauthorizedResponse();
 
   const found = await crawlPersonnel();
   return Response.json({ found });

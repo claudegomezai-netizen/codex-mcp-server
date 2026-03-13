@@ -26,11 +26,115 @@ let articleOffset = 0;
 const ARTICLE_LIMIT = 50;
 let searchTimer = null;
 
+// ── Auto-Refresh System ─────────────────────────────────
+// Crawl log cache & staleness detection
+var _crawlLogCache = null;
+var _autoRefreshInFlight = {};  // prevent double-triggers
+const STALE_HOURS = 4;  // auto-crawl if data older than this
+
+// Map: tabName → { crawlType, triggerFn, btnId }
+// Tabs excluded from auto-crawl: brief (AI costs), holdings/13f (very slow), export, log, stats, trends
+const TAB_CRAWL_MAP = {
+  'news':        { crawlType: 'news',           triggerFn: 'triggerCrawl',           btnId: 'btnCrawlAll' },
+  'fin-news':    { crawlType: 'financial-news',  triggerFn: 'triggerFinNewsCrawl',    btnId: 'btnCrawlFinNews' },
+  'sec':         { crawlType: 'sec_scanner',     triggerFn: 'triggerSecScan',         btnId: 'btnSecScan' },
+  'personnel':   { crawlType: 'personnel',       triggerFn: 'triggerPersonnelCrawl',  btnId: 'btnPersonnelCrawl' },
+  'predictions': { crawlType: 'predictions',     triggerFn: 'triggerPredictionsCrawl',btnId: 'btnPredCrawl' },
+  'aum':         { crawlType: 'aum-crawl',       triggerFn: 'triggerAumCrawl',        btnId: 'btnAumCrawl' },
+  'social':      { crawlType: null,              triggerFn: 'triggerSocialCrawl',     btnId: 'btnSocialCrawl' },
+  'adv':         { crawlType: 'adv_analysis',    triggerFn: 'triggerAdvCrawl',        btnId: 'btnAdvCrawl' },
+  'jobs':        { crawlType: 'job_postings',    triggerFn: 'triggerJobsCrawl',       btnId: 'btnJobsCrawl' },
+  'market':      { crawlType: null,              triggerFn: 'triggerMarketCrawl',     btnId: 'btnMarketCrawl' },
+  'calendar':    { crawlType: 'gov_calendar',    triggerFn: 'triggerGovCrawl',        btnId: 'btnCrawlGov' },
+};
+
+async function loadCrawlLogCache() {
+  try {
+    var res = await apiFetch('/api/crawl-log');
+    _crawlLogCache = await res.json();
+  } catch (e) {
+    _crawlLogCache = [];
+  }
+}
+
+function getLastCrawlTime(crawlType) {
+  if (!_crawlLogCache || !crawlType) return null;
+  for (var i = 0; i < _crawlLogCache.length; i++) {
+    if (_crawlLogCache[i].crawl_type === crawlType && _crawlLogCache[i].status === 'success') {
+      return new Date(_crawlLogCache[i].finished_at || _crawlLogCache[i].started_at);
+    }
+  }
+  return null;
+}
+
+function formatTimeAgo(date) {
+  if (!date) return 'Never';
+  var diff = (Date.now() - date.getTime()) / 1000;
+  if (diff < 60) return 'Just now';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+  return Math.floor(diff / 86400) + 'd ago';
+}
+
+function isStale(crawlType) {
+  var last = getLastCrawlTime(crawlType);
+  if (!last) return true;
+  return (Date.now() - last.getTime()) > STALE_HOURS * 3600 * 1000;
+}
+
+function showLastUpdated(tabName) {
+  var cfg = TAB_CRAWL_MAP[tabName];
+  if (!cfg) return;
+  var last = getLastCrawlTime(cfg.crawlType);
+  var label = formatTimeAgo(last);
+  // Find or create the timestamp badge next to the button
+  var btn = cfg.btnId ? document.getElementById(cfg.btnId) : null;
+  if (!btn) return;
+  var badge = btn.parentElement.querySelector('.last-updated-badge');
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'last-updated-badge';
+    btn.parentElement.insertBefore(badge, btn.nextSibling);
+  }
+  var color = !last ? 'var(--text-muted)' : isStale(cfg.crawlType) ? 'var(--gold)' : 'var(--positive)';
+  badge.innerHTML = '<span style="font-size:11px;color:' + color + ';margin-left:8px;opacity:0.85">⏱ ' + label + '</span>';
+}
+
+function checkAutoRefresh(tabName) {
+  var cfg = TAB_CRAWL_MAP[tabName];
+  if (!cfg || !cfg.triggerFn) return;
+  if (!cfg.crawlType) return; // no crawl type to check staleness
+  if (_autoRefreshInFlight[tabName]) return;  // already running
+  if (!isStale(cfg.crawlType)) {
+    showLastUpdated(tabName);
+    return;
+  }
+  // Auto-trigger crawl
+  _autoRefreshInFlight[tabName] = true;
+  console.log('[AutoRefresh] Tab "' + tabName + '" is stale, auto-crawling...');
+  try {
+    var fn = window[cfg.triggerFn];
+    if (typeof fn === 'function') {
+      Promise.resolve(fn()).then(function() {
+        _autoRefreshInFlight[tabName] = false;
+        loadCrawlLogCache().then(function() { showLastUpdated(tabName); });
+      }).catch(function() {
+        _autoRefreshInFlight[tabName] = false;
+      });
+    }
+  } catch (e) {
+    _autoRefreshInFlight[tabName] = false;
+  }
+  showLastUpdated(tabName);
+}
+
 // ── Init ─────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   // Auth check — redirect to login if no token
   if (!getAuthToken()) { window.location.href = '/login.html'; return; }
   await loadEntities();
+  // Load crawl log for auto-refresh timestamps
+  loadCrawlLogCache();
   // Restore last active tab, or default to Daily Brief
   var savedTab = null;
   try { savedTab = localStorage.getItem('ci_active_tab'); } catch(e) {}
@@ -441,6 +545,9 @@ function switchTab(tabName) {
   if (tabName === 'calendar') loadEvents();
   if (tabName === 'export') {}
   if (tabName === 'log') loadCrawlLog();
+
+  // Auto-refresh if data is stale (>4h) + show "Last updated" timestamp
+  checkAutoRefresh(tabName);
 }
 
 // ── Actions ──────────────────────────────────────────────
@@ -1314,16 +1421,6 @@ function renderBrief(brief) {
   const ysCls = ys != null ? (ys < 0 ? 'kpi-negative' : 'kpi-positive') : 'kpi-neutral';
   const critCount = brief.risk_alerts.filter(function(r) { return r.risk_level === 'critical'; }).length;
   const warnCount = brief.risk_alerts.filter(function(r) { return r.risk_level === 'warning'; }).length;
-  // Dedup personnel by name (same person can appear from multiple crawl hits)
-  // Skip dedup for empty names — treat them as unique entries
-  var pSeenNames = {};
-  const pMoves = (brief.personnel_moves || []).filter(function(p) {
-    var key = p.person_name.toLowerCase().trim();
-    if (!key) return true;
-    if (pSeenNames[key]) return false;
-    pSeenNames[key] = true;
-    return true;
-  });
   const aumB = brief.total_aum_billions;
 
   let html = '<div class="brief-kpi-strip">';
@@ -1417,27 +1514,10 @@ function renderBrief(brief) {
   html += '</div>'; // end sidebar
   html += '</div>'; // end primary grid
 
-  // ── Leadership Moves (full-width) ──
-  html += '<div class="brief-card brief-leadership-card brief-clickable" style="animation-delay:0.45s" onclick="switchTab(\'personnel\')">';
-  html += '<div class="brief-card-header"><span class="brief-card-title">\uD83D\uDC65 Leadership Moves</span><span class="brief-card-badge" style="background:var(--surface2);color:var(--text-muted)">' + pMoves.length + ' changes</span></div>';
-  if (pMoves.length > 0) {
-    html += '<div class="lm-grid">';
-    pMoves.forEach(function(p, idx) {
-      var typeLabel = p.change_type === 'hire' ? 'New Hire' : p.change_type === 'departure' ? 'Departure' : p.change_type === 'promotion' ? 'Promotion' : 'Board Change';
-      var typeClass = p.change_type || 'hire';
-      var roleText = p.change_type === 'hire' ? (p.new_role || 'New hire') : p.change_type === 'departure' ? (p.old_role || 'Departed') : p.change_type === 'promotion' ? ((p.old_role || '') + ' \u2192 ' + (p.new_role || '')) : (p.new_role || p.old_role || 'Board change');
-      var dateStr = new Date(p.date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
-      html += '<div class="lm-card" style="animation-delay:' + (0.5 + idx * 0.06) + 's">';
-      html += '<div class="lm-type-badge ' + typeClass + '">' + escHtml(typeLabel) + '</div>';
-      html += '<div class="lm-person">' + escHtml(p.person_name) + '</div>';
-      html += '<div class="lm-role">' + escHtml(roleText) + '</div>';
-      html += '<div class="lm-footer"><span class="lm-entity">' + escHtml(p.entity_name) + '</span><span class="lm-date">' + dateStr + '</span></div>';
-      html += '</div>';
-    });
-    html += '</div>';
-  } else {
-    html += '<div class="empty" style="font-size:12px">No personnel changes this week.</div>';
-  }
+  // ── Leadership Moves (full-width, async-loaded from /api/personnel) ──
+  html += '<div id="briefLeadershipCard" class="brief-card brief-leadership-card brief-clickable" style="animation-delay:0.45s" onclick="switchTab(\'personnel\')">';
+  html += '<div class="brief-card-header"><span class="brief-card-title">\uD83D\uDC65 Leadership Moves</span></div>';
+  html += '<div class="empty" style="font-size:12px">Loading personnel…</div>';
   html += '</div>';
 
   // ── Secondary Grid ──
@@ -1518,18 +1598,10 @@ function renderBrief(brief) {
   html += '<div class="empty" style="font-size:12px">Loading social data...</div>';
   html += '</div>';
 
-  // Trending Topics
-  html += '<div class="brief-card brief-clickable" style="animation-delay:0.75s" onclick="switchTab(\'trends\')">';
+  // Trending Topics (async-loaded from articles)
+  html += '<div id="briefTrendingTopics" class="brief-card brief-clickable" style="animation-delay:0.75s" onclick="switchTab(\'trends\')">';
   html += '<div class="brief-card-header"><span class="brief-card-title">\uD83D\uDD25 Trending Topics</span></div>';
-  if (brief.key_themes.length > 0) {
-    html += '<div class="themes-grid">';
-    brief.key_themes.forEach(function(t, i) {
-      html += '<span class="theme-tag' + (i < 3 ? ' top' : '') + '">' + escHtml(t.theme) + ' <strong>' + t.count + '</strong></span>';
-    });
-    html += '</div>';
-  } else {
-    html += '<div class="empty" style="font-size:12px">No trending topics yet.</div>';
-  }
+  html += '<div class="empty" style="font-size:12px">Loading topics…</div>';
   html += '</div>';
 
   // AUM Leaderboard
@@ -1578,6 +1650,10 @@ function renderBrief(brief) {
   // Async-load ADV + Financial News
   loadBriefAdv();
   loadBriefFinNews();
+  // Async-load personnel directly (bypasses brief cache for diversity)
+  loadBriefPersonnel();
+  // Async-load trending topics from articles
+  loadBriefTrendingTopics();
 }
 
 async function loadBriefSocialBuzz() {
@@ -1676,6 +1752,119 @@ async function loadBriefFinNews() {
   } catch (err) {
     var emptyEl = card.querySelector('.empty');
     if (emptyEl) emptyEl.textContent = 'Financial news unavailable.';
+  }
+}
+
+// ── Brief: Leadership Moves (async from /api/personnel) ──
+async function loadBriefPersonnel() {
+  var card = document.getElementById('briefLeadershipCard');
+  if (!card) return;
+  try {
+    var res = await apiFetch('/api/personnel');
+    var all = await res.json();
+    if (!all || all.length === 0) {
+      card.querySelector('.empty').textContent = 'No personnel changes. Use the Personnel tab to crawl.';
+      return;
+    }
+    // Dedup by composite key: person + entity + change_type (keeps diversity)
+    var seen = {};
+    var unique = all.filter(function(p) {
+      var key = (p.person_name || '').toLowerCase().trim() + '|' +
+                (p.entity_name || '').toLowerCase().trim() + '|' +
+                (p.change_type || '');
+      if (!key || key === '||') return true; // empty = always include
+      if (seen[key]) return false;
+      seen[key] = true;
+      return true;
+    });
+    // Take up to 8 most recent
+    var moves = unique.slice(0, 8);
+    var inner = '<div class="brief-card-header"><span class="brief-card-title">\uD83D\uDC65 Leadership Moves</span><span class="brief-card-badge" style="background:var(--surface2);color:var(--text-muted)">' + unique.length + ' changes</span></div>';
+    inner += '<div class="lm-grid">';
+    moves.forEach(function(p, idx) {
+      var typeLabel = p.change_type === 'hire' ? 'New Hire' : p.change_type === 'departure' ? 'Departure' : p.change_type === 'promotion' ? 'Promotion' : 'Board Change';
+      var typeClass = p.change_type || 'hire';
+      var roleText = p.change_type === 'hire' ? (p.new_role || 'New hire') : p.change_type === 'departure' ? (p.old_role || 'Departed') : p.change_type === 'promotion' ? ((p.old_role || '') + ' \u2192 ' + (p.new_role || '')) : (p.new_role || p.old_role || 'Board change');
+      var dateStr = new Date(p.date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+      inner += '<div class="lm-card" style="animation-delay:' + (0.5 + idx * 0.06) + 's">';
+      inner += '<div class="lm-type-badge ' + typeClass + '">' + escHtml(typeLabel) + '</div>';
+      inner += '<div class="lm-person">' + escHtml(p.person_name || 'Unknown') + '</div>';
+      inner += '<div class="lm-role">' + escHtml(roleText) + '</div>';
+      inner += '<div class="lm-footer"><span class="lm-entity">' + escHtml(p.entity_name) + '</span><span class="lm-date">' + dateStr + '</span></div>';
+      inner += '</div>';
+    });
+    inner += '</div>';
+    card.innerHTML = inner;
+  } catch (err) {
+    var emptyEl = card.querySelector('.empty');
+    if (emptyEl) emptyEl.textContent = 'Personnel data unavailable.';
+  }
+}
+
+// ── Brief: Trending Topics (async from articles) ────────
+var THEME_STOP_WORDS = new Set([
+  'the','a','an','and','or','but','in','on','at','to','for','of','with','by',
+  'from','as','is','was','are','were','be','been','being','have','has','had',
+  'do','does','did','will','would','shall','should','may','might','can','could',
+  'not','no','nor','so','if','then','than','that','this','these','those','it',
+  'its','he','she','they','we','you','i','me','my','our','your','his','her',
+  'their','which','who','whom','what','where','when','how','all','each','every',
+  'both','few','more','most','other','some','such','any','only','own','same',
+  'also','very','just','about','new','says','said','year','years','one','two',
+  'after','over','into','could','would','should','been','more','like','into',
+  'firm','firms','company','companies','group','advisory','management',
+]);
+
+async function loadBriefTrendingTopics() {
+  var card = document.getElementById('briefTrendingTopics');
+  if (!card) return;
+  try {
+    // Fetch recent articles (competitor news)
+    var res = await apiFetch('/api/articles?limit=200');
+    var articles = await res.json();
+    // Also include financial news
+    try {
+      var res2 = await apiFetch('/api/fin-articles?limit=100');
+      var finArticles = await res2.json();
+      if (Array.isArray(finArticles)) articles = articles.concat(finArticles);
+    } catch(e) {}
+
+    if (!articles || articles.length === 0) {
+      card.querySelector('.empty').textContent = 'No articles to extract topics. Crawl news first.';
+      return;
+    }
+    // Extract word frequency themes
+    var freq = {};
+    articles.forEach(function(a) {
+      var text = ((a.title || '') + ' ' + (a.snippet || '')).toLowerCase().replace(/[^a-z\s]/g, '');
+      var words = text.split(/\s+/);
+      var seen = {};
+      words.forEach(function(w) {
+        if (w.length < 4 || THEME_STOP_WORDS.has(w) || seen[w]) return;
+        seen[w] = true;
+        freq[w] = (freq[w] || 0) + 1;
+      });
+    });
+    var themes = Object.entries(freq)
+      .filter(function(e) { return e[1] >= 2; })
+      .sort(function(a, b) { return b[1] - a[1]; })
+      .slice(0, 15)
+      .map(function(e) { return { theme: e[0], count: e[1] }; });
+
+    if (themes.length === 0) {
+      card.querySelector('.empty').textContent = 'No trending topics found.';
+      return;
+    }
+    var inner = '<div class="brief-card-header"><span class="brief-card-title">\uD83D\uDD25 Trending Topics</span></div>';
+    inner += '<div class="themes-grid">';
+    themes.forEach(function(t, i) {
+      inner += '<span class="theme-tag' + (i < 3 ? ' top' : '') + '">' + escHtml(t.theme) + ' <strong>' + t.count + '</strong></span>';
+    });
+    inner += '</div>';
+    card.innerHTML = inner;
+  } catch (err) {
+    var emptyEl = card.querySelector('.empty');
+    if (emptyEl) emptyEl.textContent = 'Topics unavailable.';
   }
 }
 

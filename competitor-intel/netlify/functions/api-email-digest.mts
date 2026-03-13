@@ -1,11 +1,11 @@
 import type { Context } from '@netlify/functions';
-import { verifyAuth } from '../../src/services/auth.js';
+import { verifyAuth, unauthorizedResponse } from '../../src/services/auth.js';
 import { sendDailyDigest } from '../../src/services/resendEmail.js';
 import { getLatestBrief } from '../../src/services/blobStore.js';
 
 export default async (req: Request, context: Context) => {
-  const authError = verifyAuth(req);
-  if (authError) return authError;
+  // Auth check
+  if (!(await verifyAuth(req))) return unauthorizedResponse();
 
   if (req.method !== 'POST') {
     return Response.json({ error: 'Method not allowed' }, { status: 405 });

@@ -1,10 +1,10 @@
 import type { Context } from '@netlify/functions';
-import { verifyAuth } from '../../src/services/auth.js';
+import { verifyAuth, unauthorizedResponse } from '../../src/services/auth.js';
 import { getJobPostings, getJobTrends } from '../../src/services/blobStore.js';
 
 export default async (req: Request, context: Context) => {
-  const authError = verifyAuth(req);
-  if (authError) return authError;
+  // Auth check
+  if (!(await verifyAuth(req))) return unauthorizedResponse();
 
   const url = new URL(req.url);
   const view = url.searchParams.get('view');

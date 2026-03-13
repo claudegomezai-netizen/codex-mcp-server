@@ -499,6 +499,13 @@ header {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Auto-Refresh "Last Updated" Badge ───── */
+.last-updated-badge {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
 /* ── Priority Section ─────────────────────── */
 /* Priority strip — compact collapsible in Financial News */
 .priority-strip {

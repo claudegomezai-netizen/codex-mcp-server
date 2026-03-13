@@ -219,7 +219,7 @@
       <h2>Market Indicators</h2>
       <div class="tab-actions">
         <span id="marketTimestamp" class="brief-timestamp"></span>
-        <button class="btn btn-primary" onclick="triggerMarketCrawl()">Refresh Data</button>
+        <button id="btnMarketCrawl" class="btn btn-primary" onclick="triggerMarketCrawl()">Refresh Data</button>
       </div>
     </div>
     <div id="marketGaugeStrip" class="market-gauge-strip"></div>
@@ -322,7 +322,7 @@
       <div class="tab-title-bar" style="margin-top: 32px;">
         <h2>FINRA BrokerCheck Alerts</h2>
         <div class="tab-actions">
-          <button class="btn btn-secondary" onclick="triggerFinraCrawl()">Scan FINRA</button>
+          <button id="btnFinraCrawl" class="btn btn-secondary" onclick="triggerFinraCrawl()">Scan FINRA</button>
         </div>
       </div>
       <div id="finraAlertsList" class="finra-alerts-list">

@@ -1,11 +1,11 @@
 import type { Context } from '@netlify/functions';
-import { verifyAuth } from '../../src/services/auth.js';
+import { verifyAuth, unauthorizedResponse } from '../../src/services/auth.js';
 import { summarizeFiling } from '../../src/services/aiSummarizer.js';
 import { getSecFilings, getFilingSummaries, getFilingSummary } from '../../src/services/blobStore.js';
 
 export default async (req: Request, context: Context) => {
-  const authError = verifyAuth(req);
-  if (authError) return authError;
+  // Auth check
+  if (!(await verifyAuth(req))) return unauthorizedResponse();
 
   if (req.method === 'GET') {
     const url = new URL(req.url);
