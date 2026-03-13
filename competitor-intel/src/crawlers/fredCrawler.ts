@@ -8,12 +8,66 @@ import { getMarketIndicators, saveMarketIndicators } from '../services/blobStore
 
 const FRED_BASE = 'https://api.stlouisfed.org/fred/series/observations';
 
-const FRED_SERIES_CONFIG: Array<{ id: string; label: string; unit: string }> = [
-  { id: 'VIXCLS', label: 'VIX (Volatility Index)', unit: 'Index' },
-  { id: 'STLFSI4', label: 'Financial Stress Index', unit: 'Index' },
-  { id: 'DGS10', label: '10-Year Treasury Yield', unit: '%' },
-  { id: 'DGS2', label: '2-Year Treasury Yield', unit: '%' },
-  { id: 'FEDFUNDS', label: 'Fed Funds Rate', unit: '%' },
+interface FredSeriesConfig {
+  id: string;
+  label: string;
+  unit: string;
+  category: string;
+  source_url: string;
+}
+
+const FRED_SERIES_CONFIG: FredSeriesConfig[] = [
+  // ── Volatility & Risk ──
+  { id: 'VIXCLS', label: 'VIX (Volatility Index)', unit: 'Index', category: 'Volatility & Risk', source_url: 'https://fred.stlouisfed.org/series/VIXCLS' },
+  { id: 'STLFSI4', label: 'Financial Stress Index', unit: 'Index', category: 'Volatility & Risk', source_url: 'https://fred.stlouisfed.org/series/STLFSI4' },
+
+  // ── Interest Rates & Yields ──
+  { id: 'DGS10', label: '10-Year Treasury Yield', unit: '%', category: 'Interest Rates', source_url: 'https://fred.stlouisfed.org/series/DGS10' },
+  { id: 'DGS2', label: '2-Year Treasury Yield', unit: '%', category: 'Interest Rates', source_url: 'https://fred.stlouisfed.org/series/DGS2' },
+  { id: 'DGS30', label: '30-Year Treasury Yield', unit: '%', category: 'Interest Rates', source_url: 'https://fred.stlouisfed.org/series/DGS30' },
+  { id: 'DGS5', label: '5-Year Treasury Yield', unit: '%', category: 'Interest Rates', source_url: 'https://fred.stlouisfed.org/series/DGS5' },
+  { id: 'DTB3', label: '3-Month T-Bill Rate', unit: '%', category: 'Interest Rates', source_url: 'https://fred.stlouisfed.org/series/DTB3' },
+  { id: 'FEDFUNDS', label: 'Fed Funds Rate', unit: '%', category: 'Interest Rates', source_url: 'https://fred.stlouisfed.org/series/FEDFUNDS' },
+  { id: 'DPRIME', label: 'Bank Prime Loan Rate', unit: '%', category: 'Interest Rates', source_url: 'https://fred.stlouisfed.org/series/DPRIME' },
+
+  // ── Credit Spreads ──
+  { id: 'BAMLH0A0HYM2', label: 'High Yield OAS Spread', unit: '%', category: 'Credit Spreads', source_url: 'https://fred.stlouisfed.org/series/BAMLH0A0HYM2' },
+  { id: 'BAMLC0A4CBBB', label: 'BBB Corporate Spread', unit: '%', category: 'Credit Spreads', source_url: 'https://fred.stlouisfed.org/series/BAMLC0A4CBBB' },
+  { id: 'BAMLC0A1CAAA', label: 'AAA Corporate Spread', unit: '%', category: 'Credit Spreads', source_url: 'https://fred.stlouisfed.org/series/BAMLC0A1CAAA' },
+  { id: 'T10Y2Y', label: 'Yield Curve (10Y-2Y)', unit: '%', category: 'Credit Spreads', source_url: 'https://fred.stlouisfed.org/series/T10Y2Y' },
+  { id: 'T10YFF', label: 'Term Spread (10Y-FFR)', unit: '%', category: 'Credit Spreads', source_url: 'https://fred.stlouisfed.org/series/T10YFF' },
+
+  // ── Inflation & Prices ──
+  { id: 'T10YIE', label: '10-Year Breakeven Inflation', unit: '%', category: 'Inflation', source_url: 'https://fred.stlouisfed.org/series/T10YIE' },
+  { id: 'T5YIE', label: '5-Year Breakeven Inflation', unit: '%', category: 'Inflation', source_url: 'https://fred.stlouisfed.org/series/T5YIE' },
+  { id: 'CPIAUCSL', label: 'CPI (All Urban Consumers)', unit: 'Index', category: 'Inflation', source_url: 'https://fred.stlouisfed.org/series/CPIAUCSL' },
+  { id: 'PCEPI', label: 'PCE Price Index', unit: 'Index', category: 'Inflation', source_url: 'https://fred.stlouisfed.org/series/PCEPI' },
+
+  // ── Commodities ──
+  { id: 'DCOILWTICO', label: 'Crude Oil (WTI)', unit: '$/bbl', category: 'Commodities', source_url: 'https://fred.stlouisfed.org/series/DCOILWTICO' },
+  { id: 'DCOILBRENTEU', label: 'Crude Oil (Brent)', unit: '$/bbl', category: 'Commodities', source_url: 'https://fred.stlouisfed.org/series/DCOILBRENTEU' },
+  { id: 'DHHNGSP', label: 'Natural Gas (Henry Hub)', unit: '$/MMBtu', category: 'Commodities', source_url: 'https://fred.stlouisfed.org/series/DHHNGSP' },
+  { id: 'GOLDAMGBD228NLBM', label: 'Gold Price (London Fix)', unit: '$/oz', category: 'Commodities', source_url: 'https://fred.stlouisfed.org/series/GOLDAMGBD228NLBM' },
+  { id: 'DEXUSEU', label: 'EUR/USD Exchange Rate', unit: 'Rate', category: 'Currencies', source_url: 'https://fred.stlouisfed.org/series/DEXUSEU' },
+  { id: 'DEXJPUS', label: 'JPY/USD Exchange Rate', unit: '¥/$', category: 'Currencies', source_url: 'https://fred.stlouisfed.org/series/DEXJPUS' },
+  { id: 'DTWEXBGS', label: 'US Dollar Index (Broad)', unit: 'Index', category: 'Currencies', source_url: 'https://fred.stlouisfed.org/series/DTWEXBGS' },
+
+  // ── Money & Liquidity ──
+  { id: 'WALCL', label: 'Fed Balance Sheet (Total)', unit: '$M', category: 'Liquidity', source_url: 'https://fred.stlouisfed.org/series/WALCL' },
+  { id: 'RRPONTSYD', label: 'Overnight Reverse Repo', unit: '$B', category: 'Liquidity', source_url: 'https://fred.stlouisfed.org/series/RRPONTSYD' },
+
+  // ── Labor Market ──
+  { id: 'UNRATE', label: 'Unemployment Rate', unit: '%', category: 'Labor Market', source_url: 'https://fred.stlouisfed.org/series/UNRATE' },
+  { id: 'ICSA', label: 'Initial Jobless Claims', unit: 'K', category: 'Labor Market', source_url: 'https://fred.stlouisfed.org/series/ICSA' },
+
+  // ── Housing ──
+  { id: 'MORTGAGE30US', label: '30-Year Mortgage Rate', unit: '%', category: 'Housing', source_url: 'https://fred.stlouisfed.org/series/MORTGAGE30US' },
+  { id: 'CSUSHPINSA', label: 'S&P/Case-Shiller Home Price', unit: 'Index', category: 'Housing', source_url: 'https://fred.stlouisfed.org/series/CSUSHPINSA' },
+
+  // ── Economic Activity ──
+  { id: 'INDPRO', label: 'Industrial Production', unit: 'Index', category: 'Economic Activity', source_url: 'https://fred.stlouisfed.org/series/INDPRO' },
+  { id: 'RSAFS', label: 'Retail Sales', unit: '$M', category: 'Economic Activity', source_url: 'https://fred.stlouisfed.org/series/RSAFS' },
+  { id: 'UMCSENT', label: 'Consumer Sentiment (UMich)', unit: 'Index', category: 'Economic Activity', source_url: 'https://fred.stlouisfed.org/series/UMCSENT' },
 ];
 
 async function fetchFredSeries(seriesId: string, apiKey: string): Promise<FredSeriesPoint[]> {
@@ -78,17 +132,25 @@ export async function crawlMarketIndicators(): Promise<number> {
   const fredSeries: FredSeries[] = [];
 
   if (apiKey) {
-    for (const config of FRED_SERIES_CONFIG) {
+    // Process in batches of 5 with 600ms delay to stay under FRED 120/min limit
+    for (let i = 0; i < FRED_SERIES_CONFIG.length; i++) {
+      const config = FRED_SERIES_CONFIG[i];
       const points = await fetchFredSeries(config.id, apiKey);
       if (points.length > 0) {
         fredSeries.push({
           series_id: config.id,
           label: config.label,
           unit: config.unit,
+          category: config.category,
+          source_url: config.source_url,
           latest_value: points[points.length - 1].value,
           latest_date: points[points.length - 1].date,
           data_points: points,
         });
+      }
+      // Rate limit: pause every 5 requests
+      if ((i + 1) % 5 === 0 && i < FRED_SERIES_CONFIG.length - 1) {
+        await new Promise(r => setTimeout(r, 600));
       }
     }
   }

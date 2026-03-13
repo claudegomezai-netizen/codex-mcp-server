@@ -188,7 +188,7 @@ function renderStats(stats) {
   container.innerHTML = '';
 
   if (stats.length === 0) {
-    container.innerHTML = '<div class="empty">No data yet. Run a crawl to get started.</div>';
+    container.innerHTML = '<div class="v2-empty">No data yet. Run a crawl to get started.</div>';
     return;
   }
 
@@ -275,9 +275,24 @@ function renderCalendar(events) {
   container.innerHTML = '';
 
   if (events.length === 0) {
-    container.innerHTML = '<div class="empty">No events found. Try updating the calendar or adjusting your filters.</div>';
+    container.innerHTML = '<div class="v2-empty">No events found. Try updating the calendar or adjusting your filters.</div>';
     return;
   }
+
+  // KPI strip
+  const today = isoDate(new Date());
+  const todayCount = events.filter(e => e.event_date === today).length;
+  const categories = [...new Set(events.map(e => e.category).filter(Boolean))];
+  const uniqueDates = [...new Set(events.map(e => e.event_date))];
+  const kpiDiv = document.createElement('div');
+  kpiDiv.className = 'v2-kpi-strip';
+  kpiDiv.innerHTML = `
+    <div class="kpi-card"><div class="kpi-value">${events.length}</div><div class="kpi-label">Total Events</div></div>
+    <div class="kpi-card"><div class="kpi-value" style="color:var(--positive)">${todayCount}</div><div class="kpi-label">Today</div></div>
+    <div class="kpi-card"><div class="kpi-value">${uniqueDates.length}</div><div class="kpi-label">Days</div></div>
+    <div class="kpi-card"><div class="kpi-value">${categories.length}</div><div class="kpi-label">Categories</div></div>
+  `;
+  container.appendChild(kpiDiv);
 
   // Group by date
   const grouped = {};
@@ -286,8 +301,6 @@ function renderCalendar(events) {
     if (!grouped[d]) grouped[d] = [];
     grouped[d].push(e);
   }
-
-  const today = isoDate(new Date());
 
   for (const [date, dayEvents] of Object.entries(grouped)) {
     const group = document.createElement('div');
@@ -348,11 +361,25 @@ async function loadCrawlLog() {
 function renderCrawlLog(logs) {
   const container = document.getElementById('crawlLogList');
   if (logs.length === 0) {
-    container.innerHTML = '<div class="empty">No crawl history yet.</div>';
+    container.innerHTML = '<div class="v2-empty">No crawl history yet.</div>';
     return;
   }
+
+  // KPI strip
+  const success = logs.filter(l => l.status === 'success' || l.status === 'completed').length;
+  const failed = logs.filter(l => l.status === 'error' || l.status === 'failed').length;
+  const totalFound = logs.reduce((s, l) => s + (l.articles_found || 0), 0);
+  const successRate = logs.length > 0 ? Math.round((success / logs.length) * 100) : 0;
+
   container.innerHTML = `
-    <table>
+    <div class="v2-kpi-strip">
+      <div class="kpi-card"><div class="kpi-value">${logs.length}</div><div class="kpi-label">Total Crawls</div></div>
+      <div class="kpi-card"><div class="kpi-value" style="color:var(--positive)">${successRate}%</div><div class="kpi-label">Success Rate</div></div>
+      <div class="kpi-card"><div class="kpi-value">${totalFound}</div><div class="kpi-label">Articles Found</div></div>
+      <div class="kpi-card"><div class="kpi-value" style="color:var(--negative)">${failed}</div><div class="kpi-label">Failures</div></div>
+    </div>
+    <div class="v2-table-card">
+    <table class="v2-table">
       <thead>
         <tr>
           <th>Time</th>
@@ -376,6 +403,7 @@ function renderCrawlLog(logs) {
         `).join('')}
       </tbody>
     </table>
+    </div>
   `;
 }
 
@@ -398,7 +426,6 @@ function switchTab(tabName) {
   if (tabName === 'adv') loadAdvAnalyses();
   if (tabName === 'trends') { loadTrends(); populateTrendEntitySelect(); }
   if (tabName === 'personnel') loadPersonnel();
-  if (tabName === 'mandates') { loadMandates(); populateMandateEntitySelect(); }
   if (tabName === 'jobs') loadJobs();
   if (tabName === 'predictions') loadPredictions();
   if (tabName === 'calendar') loadEvents();
@@ -754,11 +781,22 @@ const KEYWORD_SEVERITY = {};
 function renderSecFilings(filings) {
   const container = document.getElementById('secFilingsList');
   if (!filings || filings.length === 0) {
-    container.innerHTML = '<div class="empty">No filings found. Click "Scan SEC EDGAR" to search.</div>';
+    container.innerHTML = '<div class="v2-empty">No filings found. Click "Scan SEC EDGAR" to search.</div>';
     return;
   }
 
-  container.innerHTML = '';
+  // KPI strip
+  const critical = filings.filter(f => f.risk_level === 'critical').length;
+  const warning = filings.filter(f => f.risk_level === 'warning').length;
+  const monitor = filings.filter(f => f.risk_level === 'monitor' || f.risk_level === 'info').length;
+  const kpiHtml = `<div class="v2-kpi-strip">
+    <div class="kpi-card"><div class="kpi-value">${filings.length}</div><div class="kpi-label">Total Filings</div></div>
+    <div class="kpi-card"><div class="kpi-value" style="color:var(--negative)">${critical}</div><div class="kpi-label">Critical</div></div>
+    <div class="kpi-card"><div class="kpi-value" style="color:var(--gold)">${warning}</div><div class="kpi-label">Warning</div></div>
+    <div class="kpi-card"><div class="kpi-value" style="color:var(--text-muted)">${monitor}</div><div class="kpi-label">Monitor</div></div>
+  </div>`;
+
+  container.innerHTML = kpiHtml;
   for (const f of filings) {
     const card = document.createElement('div');
     const riskClass = f.risk_level || 'info';
@@ -991,11 +1029,20 @@ async function loadPredictions() {
 function renderPredictions(markets) {
   const container = document.getElementById('predictionsList');
   if (!markets || markets.length === 0) {
-    container.innerHTML = '<div class="empty">No predictions found. Click "Refresh Predictions" to load from Polymarket.</div>';
+    container.innerHTML = '<div class="v2-empty">No predictions found. Click "Refresh Predictions" to load from Polymarket.</div>';
     return;
   }
 
-  container.innerHTML = '';
+  // KPI strip
+  const avgProb = markets.length > 0 ? Math.round(markets.reduce((s, m) => s + m.probability, 0) / markets.length) : 0;
+  const totalVol = markets.reduce((s, m) => s + (m.volume || 0), 0);
+  const highConf = markets.filter(m => m.probability >= 70).length;
+  container.innerHTML = `<div class="v2-kpi-strip">
+    <div class="kpi-card"><div class="kpi-value">${markets.length}</div><div class="kpi-label">Total Markets</div></div>
+    <div class="kpi-card"><div class="kpi-value">${avgProb}%</div><div class="kpi-label">Avg Probability</div></div>
+    <div class="kpi-card"><div class="kpi-value">$${formatVolume(totalVol)}</div><div class="kpi-label">Total Volume</div></div>
+    <div class="kpi-card"><div class="kpi-value" style="color:var(--positive)">${highConf}</div><div class="kpi-label">High Confidence</div></div>
+  </div>`;
   for (const m of markets) {
     const card = document.createElement('div');
     card.className = 'prediction-card';
@@ -1175,215 +1222,302 @@ async function refreshBrief() {
   }
 }
 
+function renderMiniSparkline(values, w, h) {
+  w = w || 70; h = h || 22;
+  if (!values || values.length < 2) return '';
+  const pad = 1;
+  const min = Math.min(...values), max = Math.max(...values);
+  const range = max - min || 1;
+  const pts = values.map((v, i) => {
+    const x = pad + (i / (values.length - 1)) * (w - 2 * pad);
+    const y = pad + (1 - (v - min) / range) * (h - 2 * pad);
+    return x + ',' + y;
+  });
+  const color = values[values.length - 1] >= values[0] ? 'var(--positive)' : 'var(--negative)';
+  return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h + '">' +
+    '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + color + '" stroke-width="1.5"/></svg>';
+}
+
+function renderMiniDonut(values, colors, size) {
+  size = size || 32;
+  const total = values.reduce(function(a, b) { return a + b; }, 0) || 1;
+  const r = size / 2 - 2;
+  const cx = size / 2, cy = size / 2;
+  let svg = '<svg viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size + '">';
+  let startAngle = -Math.PI / 2;
+  values.forEach(function(v, i) {
+    if (v <= 0) return;
+    const angle = (v / total) * Math.PI * 2;
+    const endAngle = startAngle + angle;
+    const largeArc = angle > Math.PI ? 1 : 0;
+    const x1 = cx + r * Math.cos(startAngle), y1 = cy + r * Math.sin(startAngle);
+    const x2 = cx + r * Math.cos(endAngle), y2 = cy + r * Math.sin(endAngle);
+    svg += '<path d="M' + cx + ',' + cy + ' L' + x1 + ',' + y1 + ' A' + r + ',' + r + ' 0 ' + largeArc + ' 1 ' + x2 + ',' + y2 + ' Z" fill="' + colors[i] + '"/>';
+    startAngle = endAngle;
+  });
+  svg += '<circle cx="' + cx + '" cy="' + cy + '" r="' + Math.round(r * 0.55) + '" fill="var(--surface)"/></svg>';
+  return svg;
+}
+
 function renderBrief(brief) {
   const container = document.getElementById('briefContent');
   const ts = document.getElementById('briefTimestamp');
-
   if (brief.generated_at) {
-    ts.textContent = `Generated: ${new Date(brief.generated_at).toLocaleString()}`;
+    ts.textContent = 'Generated: ' + new Date(brief.generated_at).toLocaleString();
   }
 
-  const s = brief.market_sentiment;
-  const trendIcon = s.trend === 'improving' ? '&#9650;' : s.trend === 'declining' ? '&#9660;' : '&#9644;';
-  const trendClass = s.trend === 'improving' ? 'trend-up' : s.trend === 'declining' ? 'trend-down' : 'trend-flat';
+  const s = brief.market_sentiment || { avg_score: 0, trend: 'stable', positive_pct: 0, neutral_pct: 100, negative_pct: 0, total_articles: 0, prev_avg_score: 0 };
+  const mkt = brief.market_indicators || {};
+  const trendArrow = s.trend === 'improving' ? '\u25B2' : s.trend === 'declining' ? '\u25BC' : '\u2500';
+  const trendCls = s.trend === 'improving' ? 'kpi-positive' : s.trend === 'declining' ? 'kpi-negative' : 'kpi-neutral';
 
-  let html = '';
+  // Ensure arrays exist
+  brief.top_stories = brief.top_stories || [];
+  brief.risk_alerts = brief.risk_alerts || [];
+  brief.prediction_movers = brief.prediction_movers || [];
+  brief.upcoming_events = brief.upcoming_events || [];
+  brief.competitor_activity = brief.competitor_activity || [];
+  brief.key_themes = brief.key_themes || [];
+  brief.finra_alerts = brief.finra_alerts || [];
 
-  // 1. Market Sentiment — SVG arc gauge
-  // Score range: -1 (bearish) to +1 (bullish), default to 0 for no data
-  const gaugeScore = s.avg_score;
-  const normalized = Math.max(0, Math.min(1, (gaugeScore + 1) / 2)); // map -1..+1 to 0..1
-  const arcRadius = 60;
-  const arcLen = Math.PI * arcRadius; // semicircle circumference
-  const dashOffset = arcLen * (1 - normalized);
-  // Color: red(-1) -> yellow(0) -> green(+1)
-  const gaugeHue = Math.round(normalized * 120); // 0=red, 60=yellow, 120=green
-  const gaugeColor = `hsl(${gaugeHue}, 70%, 50%)`;
-  const periodLabel = s.total_articles > 0 ? '24h' : 'all time';
+  // ── KPI Strip ──
+  const fgScore = mkt.fear_greed_score;
+  const fgRating = mkt.fear_greed_rating || '—';
+  const fgColor = fgScore != null ? (fgScore >= 60 ? 'kpi-positive' : fgScore <= 40 ? 'kpi-negative' : 'kpi-neutral') : 'kpi-neutral';
+  const ys = mkt.yield_spread;
+  const ysCls = ys != null ? (ys < 0 ? 'kpi-negative' : 'kpi-positive') : 'kpi-neutral';
+  const critCount = brief.risk_alerts.filter(function(r) { return r.risk_level === 'critical'; }).length;
+  const warnCount = brief.risk_alerts.filter(function(r) { return r.risk_level === 'warning'; }).length;
+  const pMoves = brief.personnel_moves || [];
+  const aumB = brief.total_aum_billions;
 
-  html += `
-    <div class="brief-section">
-      <h3 class="brief-section-title">Market Sentiment</h3>
-      <div class="sentiment-dashboard">
-        <div class="sentiment-gauge-box">
-          <svg class="gauge-svg" width="170" height="100" viewBox="0 0 170 100">
-            <path class="gauge-bg" d="M 15 90 A ${arcRadius} ${arcRadius} 0 0 1 155 90" />
-            <path class="gauge-fill" id="gaugeFill"
-              d="M 15 90 A ${arcRadius} ${arcRadius} 0 0 1 155 90"
-              stroke="${gaugeColor}"
-              stroke-dasharray="${arcLen}"
-              stroke-dashoffset="${arcLen}" />
-            <text class="gauge-score-text" x="85" y="75" text-anchor="middle">${gaugeScore.toFixed(2)}</text>
-            <text class="gauge-label-text" x="85" y="92" text-anchor="middle">${s.total_articles} articles (${periodLabel})</text>
-          </svg>
-          <div class="gauge-range"><span>Bearish</span><span>Bullish</span></div>
-          <div class="sentiment-trend ${trendClass}">${trendIcon} ${escHtml(s.trend)}</div>
-        </div>
-        <div class="sentiment-bars">
-          <div class="sent-bar-row">
-            <span class="sent-label pos-label">Positive</span>
-            <div class="sent-bar-track"><div class="sent-bar-fill pos-fill" style="width:0%"></div></div>
-            <span class="sent-pct">${s.positive_pct}%</span>
-          </div>
-          <div class="sent-bar-row">
-            <span class="sent-label neu-label">Neutral</span>
-            <div class="sent-bar-track"><div class="sent-bar-fill neu-fill" style="width:0%"></div></div>
-            <span class="sent-pct">${s.neutral_pct}%</span>
-          </div>
-          <div class="sent-bar-row">
-            <span class="sent-label neg-label">Negative</span>
-            <div class="sent-bar-track"><div class="sent-bar-fill neg-fill" style="width:0%"></div></div>
-            <span class="sent-pct">${s.negative_pct}%</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
+  let html = '<div class="brief-kpi-strip">';
+  // Mini sentiment gauge for KPI card
+  var sNorm = Math.max(0, Math.min(1, (s.avg_score + 1) / 2));
+  var sHue = Math.round(sNorm * 120);
+  var sGaugeColor = 'hsl(' + sHue + ', 70%, 50%)';
+  var sArcR = 28, sArcLen = Math.PI * sArcR;
+  var sArcOff = sArcLen * (1 - sNorm);
+  html += '<div class="kpi-card brief-clickable" onclick="switchTab(&apos;news&apos;)"><div class="kpi-label">Sentiment</div><div class="kpi-gauge-wrap"><svg width="80" height="48" viewBox="0 0 80 48"><path d="M 6 42 A ' + sArcR + ' ' + sArcR + ' 0 0 1 74 42" fill="none" stroke="var(--border)" stroke-width="5" stroke-linecap="round"/><path class="kpi-gauge-fill" d="M 6 42 A ' + sArcR + ' ' + sArcR + ' 0 0 1 74 42" fill="none" stroke="' + sGaugeColor + '" stroke-width="5" stroke-linecap="round" stroke-dasharray="' + sArcLen + '" stroke-dashoffset="' + sArcLen + '" data-target="' + sArcOff + '" style="filter:drop-shadow(0 0 3px ' + sGaugeColor + ');transition:stroke-dashoffset 1s"/><text x="40" y="38" text-anchor="middle" fill="var(--text)" font-size="13" font-weight="800">' + s.avg_score.toFixed(2) + '</text></svg></div><div class="kpi-delta ' + trendCls + '">' + trendArrow + ' ' + escHtml(s.trend) + ' &middot; ' + s.total_articles + ' articles</div></div>';
+  html += '<div class="kpi-card brief-clickable" onclick="switchTab(\'market\')"><div class="kpi-label">Fear &amp; Greed</div><div class="kpi-value ' + fgColor + '">' + (fgScore != null ? fgScore : '—') + '</div><div class="kpi-delta kpi-neutral">' + escHtml(fgRating) + '</div></div>';
+  html += '<div class="kpi-card brief-clickable" onclick="switchTab(\'market\')"><div class="kpi-label">Yield Spread</div><div class="kpi-value ' + ysCls + '">' + (ys != null ? (ys >= 0 ? '+' : '') + ys.toFixed(2) + '%' : '—') + '</div><div class="kpi-delta kpi-neutral">10Y - 2Y Treasury</div></div>';
+  html += '<div class="kpi-card brief-clickable" onclick="switchTab(\'sec\')"><div class="kpi-label">Active Filings</div><div class="kpi-value">' + brief.risk_alerts.length + '</div><div class="kpi-delta">' + (critCount > 0 ? '<span class="kpi-negative">' + critCount + ' critical</span> ' : '') + (warnCount > 0 ? '<span style="color:var(--gold)">' + warnCount + ' warning</span>' : '') + (critCount === 0 && warnCount === 0 ? '<span class="kpi-neutral">No alerts</span>' : '') + '</div></div>';
+  html += '<div class="kpi-card brief-clickable" onclick="switchTab(\'personnel\')"><div class="kpi-label">Personnel (7d)</div><div class="kpi-value">' + pMoves.length + '</div><div class="kpi-delta kpi-neutral">' + (pMoves.length > 0 ? pMoves.filter(function(p){return p.change_type==='hire';}).length + ' hires, ' + pMoves.filter(function(p){return p.change_type==='departure';}).length + ' departures' : 'No changes') + '</div></div>';
+  html += '<div class="kpi-card brief-clickable" onclick="switchTab(\'aum\')"><div class="kpi-label">Total AUM Tracked</div><div class="kpi-value">' + (aumB != null ? '$' + aumB.toLocaleString() + 'B' : '—') + '</div><div class="kpi-delta kpi-neutral">Across all entities</div></div>';
+  html += '</div>';
 
-  // Animate gauge and bars after render
-  setTimeout(() => {
-    const fill = document.getElementById('gaugeFill');
-    if (fill) fill.setAttribute('stroke-dashoffset', String(dashOffset));
-    document.querySelectorAll('.sent-bar-fill.pos-fill').forEach(el => el.style.width = s.positive_pct + '%');
-    document.querySelectorAll('.sent-bar-fill.neu-fill').forEach(el => el.style.width = s.neutral_pct + '%');
-    document.querySelectorAll('.sent-bar-fill.neg-fill').forEach(el => el.style.width = s.negative_pct + '%');
-  }, 50);
+  // ── Primary Grid ──
+  html += '<div class="brief-grid-primary">';
 
-  // 2. Top Stories
+  // Left: Top Stories
+  html += '<div class="brief-card" style="animation-delay:0.3s">';
+  html += '<div class="brief-card-header"><span class="brief-card-title">\u26A1 Top Stories</span><span class="brief-card-badge" style="background:var(--surface2);color:var(--text-muted)">' + brief.top_stories.length + ' stories</span></div>';
   if (brief.top_stories.length > 0) {
-    html += `
-      <div class="brief-section">
-        <h3 class="brief-section-title">Top Stories</h3>
-        <div class="brief-stories">
-          ${brief.top_stories.map(st => `
-            <div class="brief-story">
-              <div class="brief-story-header">
-                <span class="brief-reason brief-reason-${st.reason.toLowerCase().replace(/\s+/g, '-')}">${escHtml(st.reason)}</span>
-                <span class="sentiment-badge sentiment-${st.sentiment_label}">${st.sentiment_label}</span>
-              </div>
-              <a href="${escHtml(st.link)}" target="_blank" rel="noopener" class="brief-story-title">${escHtml(st.title)}</a>
-              <div class="brief-story-meta">
-                <span class="entity-tag">${escHtml(st.entity_name)}</span>
-                <span>${formatDateTime(st.pub_date)}</span>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
+    var first = brief.top_stories[0];
+    html += '<div class="brief-featured"><div class="story-title"><a href="' + escHtml(first.link) + '" target="_blank" rel="noopener">' + escHtml(first.title) + '</a></div><div class="story-meta"><span class="story-entity">' + escHtml(first.entity_name) + '</span><span class="brief-reason brief-reason-' + first.reason.toLowerCase().replace(/\s+/g, '-') + '">' + escHtml(first.reason) + '</span><span>' + formatDateTime(first.pub_date) + '</span></div></div>';
+    brief.top_stories.slice(1).forEach(function(st) {
+      html += '<div class="brief-story-row"><span class="story-dot ' + st.sentiment_label + '"></span><div><div class="story-title"><a href="' + escHtml(st.link) + '" target="_blank" rel="noopener">' + escHtml(st.title) + '</a></div><div class="story-meta"><span class="story-entity">' + escHtml(st.entity_name) + '</span><span class="brief-reason brief-reason-' + st.reason.toLowerCase().replace(/\s+/g, '-') + '">' + escHtml(st.reason) + '</span><span>' + formatDateTime(st.pub_date) + '</span></div></div></div>';
+    });
+  } else {
+    html += '<div class="empty">No priority stories in this period.</div>';
   }
+  html += '</div>';
 
-  // 3. Risk Alerts
-  if (brief.risk_alerts.length > 0) {
-    html += `
-      <div class="brief-section">
-        <h3 class="brief-section-title">Risk Alerts</h3>
-        <div class="brief-risks">
-          ${brief.risk_alerts.map(r => `
-            <div class="brief-risk brief-risk-${r.risk_level}">
-              <div class="brief-risk-header">
-                <span class="risk-badge risk-${r.risk_level}">${r.risk_level.toUpperCase()} (${r.risk_score})</span>
-                <span class="sec-type-badge">${escHtml(r.filing_type)}</span>
-              </div>
-              <div class="brief-risk-company">${escHtml(r.company_name)}</div>
-              <div class="brief-risk-desc">${escHtml(r.description)}</div>
-              <a href="${escHtml(r.document_url)}" target="_blank" rel="noopener" class="read-more">View Filing &#8594;</a>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
+  // Right sidebar
+  html += '<div class="brief-sidebar">';
+
+  // Market Pulse
+  html += '<div class="brief-card brief-clickable" style="animation-delay:0.35s" onclick="switchTab(\'market\')">';
+  html += '<div class="brief-card-header"><span class="brief-card-title">\uD83D\uDCC8 Market Pulse</span></div>';
+  var gaugeScore = s.avg_score;
+  var normalized = Math.max(0, Math.min(1, (gaugeScore + 1) / 2));
+  var arcR = 50, arcL = Math.PI * arcR;
+  var dOff = arcL * (1 - normalized);
+  var gHue = Math.round(normalized * 120);
+  var gColor = 'hsl(' + gHue + ', 70%, 50%)';
+  html += '<div style="text-align:center"><svg width="140" height="80" viewBox="0 0 140 80"><path d="M 10 72 A ' + arcR + ' ' + arcR + ' 0 0 1 130 72" fill="none" stroke="var(--border)" stroke-width="8" stroke-linecap="round"/><path id="gaugeFill" d="M 10 72 A ' + arcR + ' ' + arcR + ' 0 0 1 130 72" fill="none" stroke="' + gColor + '" stroke-width="8" stroke-linecap="round" stroke-dasharray="' + arcL + '" stroke-dashoffset="' + arcL + '" style="filter:drop-shadow(0 0 4px ' + gColor + ');transition:stroke-dashoffset 1s"/><text x="70" y="62" text-anchor="middle" fill="var(--text)" font-size="18" font-weight="800">' + gaugeScore.toFixed(2) + '</text><text x="70" y="76" text-anchor="middle" fill="var(--text-muted)" font-size="9">' + s.total_articles + ' articles</text></svg></div>';
+  html += '<div class="sentiment-stack"><div class="seg-pos" style="width:' + s.positive_pct + '%"></div><div class="seg-neu" style="width:' + s.neutral_pct + '%"></div><div class="seg-neg" style="width:' + s.negative_pct + '%"></div></div>';
+  html += '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);margin-top:3px"><span style="color:var(--positive)">' + s.positive_pct + '% pos</span><span>' + s.neutral_pct + '% neu</span><span style="color:var(--negative)">' + s.negative_pct + '% neg</span></div>';
+
+  // FRED sparklines
+  var sparklines = (mkt.sparklines || []);
+  if (sparklines.length > 0 || mkt.vix != null || mkt.fed_funds != null) {
+    html += '<div class="fred-grid">';
+    if (mkt.vix != null) {
+      var vixSp = sparklines.find(function(sp) { return sp.label && sp.label.toLowerCase().indexOf('vix') >= 0; });
+      html += '<div class="fred-mini"><div class="fred-mini-label">VIX</div><div class="fred-mini-value">' + mkt.vix.toFixed(1) + '</div>' + (vixSp ? renderMiniSparkline(vixSp.values) : '') + '</div>';
+    }
+    if (mkt.fed_funds != null) {
+      var ffSp = sparklines.find(function(sp) { return sp.label && sp.label.toLowerCase().indexOf('fed') >= 0; });
+      html += '<div class="fred-mini"><div class="fred-mini-label">Fed Funds</div><div class="fred-mini-value">' + mkt.fed_funds.toFixed(2) + '%</div>' + (ffSp ? renderMiniSparkline(ffSp.values) : '') + '</div>';
+    }
+    sparklines.filter(function(sp) {
+      return !(sp.label && (sp.label.toLowerCase().indexOf('vix') >= 0 || sp.label.toLowerCase().indexOf('fed') >= 0));
+    }).slice(0, 2).forEach(function(sp) {
+      html += '<div class="fred-mini"><div class="fred-mini-label">' + escHtml(sp.label) + '</div><div class="fred-mini-value">' + (sp.values.length > 0 ? sp.values[sp.values.length - 1].toFixed(2) : '—') + '</div>' + renderMiniSparkline(sp.values) + '</div>';
+    });
+    html += '</div>';
   }
+  html += '</div>';
 
-  // 4. Prediction Movers
+  // Regulatory Radar
+  html += '<div class="brief-card brief-clickable" style="animation-delay:0.4s" onclick="switchTab(\'sec\')">';
+  var secAlerts = brief.risk_alerts || [];
+  var finraAlerts = brief.finra_alerts || [];
+  var allRegs = secAlerts.length + finraAlerts.length;
+  var donut = renderMiniDonut([critCount, warnCount, Math.max(allRegs - critCount - warnCount, 0)], ['var(--negative)', 'var(--gold)', 'var(--primary)']);
+  html += '<div class="brief-card-header"><span class="brief-card-title">\uD83D\uDEE1\uFE0F Regulatory Radar</span><span>' + donut + '</span></div>';
+  if (allRegs === 0) {
+    html += '<div class="empty" style="font-size:12px">No regulatory alerts.</div>';
+  }
+  secAlerts.slice(0, 4).forEach(function(r) {
+    html += '<div class="reg-item ' + (r.risk_level || 'monitor') + '"><div style="display:flex;gap:6px;align-items:center;margin-bottom:3px"><span class="reg-badge sec">SEC</span><span class="reg-badge" style="background:var(--surface);color:var(--text-muted)">' + escHtml(r.filing_type || '') + '</span><span style="font-size:10px;color:var(--text-muted)">' + escHtml((r.risk_level || '').toUpperCase()) + '</span></div><div style="font-weight:600;font-size:12px">' + escHtml(r.company_name || '') + '</div><div style="font-size:11px;color:var(--text-muted);margin-top:2px">' + escHtml((r.description || '').substring(0, 120)) + '</div></div>';
+  });
+  finraAlerts.slice(0, 3).forEach(function(f) {
+    html += '<div class="reg-item ' + (f.severity || 'low') + '"><div style="display:flex;gap:6px;align-items:center;margin-bottom:3px"><span class="reg-badge finra">FINRA</span><span style="font-size:10px;color:var(--text-muted)">' + escHtml((f.severity || '').toUpperCase()) + '</span></div><div style="font-weight:600;font-size:12px">' + escHtml(f.firm_name || '') + '</div><div style="font-size:11px;color:var(--text-muted);margin-top:2px">' + escHtml((f.summary || '').substring(0, 120)) + '</div></div>';
+  });
+  html += '</div>';
+
+  html += '</div>'; // end sidebar
+  html += '</div>'; // end primary grid
+
+  // ── Leadership Moves (full-width) ──
+  html += '<div class="brief-card brief-leadership-card brief-clickable" style="animation-delay:0.45s" onclick="switchTab(\'personnel\')">';
+  html += '<div class="brief-card-header"><span class="brief-card-title">\uD83D\uDC65 Leadership Moves</span><span class="brief-card-badge" style="background:var(--surface2);color:var(--text-muted)">' + pMoves.length + ' changes</span></div>';
+  if (pMoves.length > 0) {
+    html += '<div class="lm-grid">';
+    pMoves.forEach(function(p, idx) {
+      var typeLabel = p.change_type === 'hire' ? 'New Hire' : p.change_type === 'departure' ? 'Departure' : p.change_type === 'promotion' ? 'Promotion' : 'Board Change';
+      var typeClass = p.change_type || 'hire';
+      var roleText = p.change_type === 'hire' ? (p.new_role || 'New hire') : p.change_type === 'departure' ? (p.old_role || 'Departed') : p.change_type === 'promotion' ? ((p.old_role || '') + ' \u2192 ' + (p.new_role || '')) : (p.new_role || p.old_role || 'Board change');
+      var dateStr = new Date(p.date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+      html += '<div class="lm-card" style="animation-delay:' + (0.5 + idx * 0.06) + 's">';
+      html += '<div class="lm-type-badge ' + typeClass + '">' + escHtml(typeLabel) + '</div>';
+      html += '<div class="lm-person">' + escHtml(p.person_name) + '</div>';
+      html += '<div class="lm-role">' + escHtml(roleText) + '</div>';
+      html += '<div class="lm-footer"><span class="lm-entity">' + escHtml(p.entity_name) + '</span><span class="lm-date">' + dateStr + '</span></div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  } else {
+    html += '<div class="empty" style="font-size:12px">No personnel changes this week.</div>';
+  }
+  html += '</div>';
+
+  // ── Secondary Grid ──
+  html += '<div class="brief-grid-secondary">';
+
+  // Predictions
+  html += '<div class="brief-card brief-clickable" style="animation-delay:0.5s" onclick="switchTab(\'predictions\')">';
+  html += '<div class="brief-card-header"><span class="brief-card-title">\uD83D\uDD2E Predictions</span></div>';
   if (brief.prediction_movers.length > 0) {
-    html += `
-      <div class="brief-section">
-        <h3 class="brief-section-title">Prediction Markets</h3>
-        <div class="brief-predictions">
-          ${brief.prediction_movers.map(p => {
-            const pct = Math.round(p.probability);
-            const color = pct >= 70 ? 'var(--positive)' : pct >= 40 ? 'var(--gold)' : 'var(--negative)';
-            return `
-              <div class="brief-pred">
-                <div class="brief-pred-info">
-                  <span class="pred-category">${escHtml(p.category)}</span>
-                  <span class="brief-pred-q">${escHtml(p.question)}</span>
-                </div>
-                <div class="brief-pred-bar">
-                  <div class="pred-bar-track"><div class="pred-bar-fill" style="width:${pct}%;background:${color}"></div></div>
-                  <span class="pred-prob" style="color:${color}">${pct}%</span>
-                </div>
-              </div>
-            `;
-          }).join('')}
-        </div>
-      </div>
-    `;
+    brief.prediction_movers.slice(0, 6).forEach(function(p) {
+      var pct = Math.round(p.probability);
+      var pColor = pct >= 70 ? 'var(--positive)' : pct >= 40 ? 'var(--gold)' : 'var(--negative)';
+      html += '<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px"><span style="font-size:11px;flex:1;margin-right:8px">' + escHtml(p.question.substring(0, 80)) + '</span><span style="font-weight:700;color:' + pColor + ';font-size:13px">' + pct + '%</span></div><div style="height:4px;background:var(--surface2);border-radius:2px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:' + pColor + ';border-radius:2px;transition:width 0.6s"></div></div></div>';
+    });
+  } else {
+    html += '<div class="empty" style="font-size:12px">No prediction data.</div>';
   }
+  html += '</div>';
 
-  // 5. Upcoming Events
+  // Hiring Signals
+  var hiring = brief.hiring_signals || [];
+  html += '<div class="brief-card brief-clickable" style="animation-delay:0.55s" onclick="switchTab(\'jobs\')">';
+  html += '<div class="brief-card-header"><span class="brief-card-title">\uD83D\uDCBC Hiring Signals</span></div>';
+  if (hiring.length > 0) {
+    var maxHire = Math.max.apply(null, hiring.map(function(h) { return h.total_postings; }));
+    hiring.forEach(function(h) {
+      var pct = Math.max((h.total_postings / maxHire) * 100, 5);
+      html += '<div class="hiring-row"><span class="hiring-entity">' + escHtml(h.entity_name) + '</span><div class="hiring-bar-wrap"><div class="hiring-bar" style="width:' + pct + '%"></div></div><span class="hiring-count">' + h.total_postings + '</span></div>';
+      if (h.top_departments && h.top_departments.length > 0) {
+        html += '<div class="hiring-depts" style="margin-left:128px;margin-bottom:4px">';
+        h.top_departments.forEach(function(d) { html += '<span class="hiring-dept-pill">' + escHtml(d) + '</span>'; });
+        html += '</div>';
+      }
+    });
+  } else {
+    html += '<div class="empty" style="font-size:12px">No hiring data yet.</div>';
+  }
+  html += '</div>';
+
+
+  // Events (7d)
+  html += '<div class="brief-card brief-clickable" style="animation-delay:0.65s" onclick="switchTab(\'calendar\')">';
+  html += '<div class="brief-card-header"><span class="brief-card-title">\uD83D\uDCC5 Events (7d)</span><span class="brief-card-badge" style="background:var(--surface2);color:var(--text-muted)">' + brief.upcoming_events.length + '</span></div>';
   if (brief.upcoming_events.length > 0) {
-    html += `
-      <div class="brief-section">
-        <h3 class="brief-section-title">Upcoming Events (7 days)</h3>
-        <div class="brief-events">
-          ${brief.upcoming_events.map(e => `
-            <div class="brief-event">
-              <span class="brief-event-date">${new Date(e.event_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-              <span class="event-cat ${getCatClass(e.category)}">${escHtml(e.category)}</span>
-              <span class="brief-event-title">${escHtml(e.title)}</span>
-              ${e.link ? `<a href="${escHtml(e.link)}" target="_blank" rel="noopener" class="brief-event-link">&#8594;</a>` : ''}
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
+    var lastDay = '';
+    brief.upcoming_events.forEach(function(e) {
+      var d = new Date(e.event_date + 'T12:00:00');
+      var dayLabel = d.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'});
+      if (dayLabel !== lastDay) {
+        html += '<div class="event-day-header">' + dayLabel + '</div>';
+        lastDay = dayLabel;
+      }
+      html += '<div class="event-row"><span class="event-cat">' + escHtml(e.category) + '</span><span>' + escHtml(e.title.substring(0, 60)) + (e.title.length > 60 ? '...' : '') + '</span></div>';
+    });
+  } else {
+    html += '<div class="empty" style="font-size:12px">No upcoming events.</div>';
   }
+  html += '</div>';
 
-  // 6. Competitor Activity
+  // Competitor Buzz
+  html += '<div class="brief-card brief-clickable" style="animation-delay:0.7s" onclick="switchTab(\'news\')">';
+  html += '<div class="brief-card-header"><span class="brief-card-title">\uD83D\uDCE2 Competitor Buzz</span></div>';
   if (brief.competitor_activity.length > 0) {
-    const maxCount = Math.max(...brief.competitor_activity.map(c => c.article_count));
-    html += `
-      <div class="brief-section">
-        <h3 class="brief-section-title">Competitor Activity (24h)</h3>
-        <div class="brief-activity">
-          ${brief.competitor_activity.map(c => {
-            const pct = Math.max((c.article_count / maxCount) * 100, 5);
-            const isSelf = c.entity_id === 'dobbs-group';
-            return `
-              <div class="activity-row${isSelf ? ' activity-self' : ''}">
-                <div class="activity-label">
-                  <span class="activity-name">${escHtml(c.entity_name)}</span>
-                  <span class="activity-count">${c.article_count}</span>
-                </div>
-                <div class="activity-bar-track">
-                  <div class="activity-bar-fill${isSelf ? ' self-fill' : ''}" style="width:${pct}%"></div>
-                </div>
-                <a href="${escHtml(c.top_link)}" target="_blank" rel="noopener" class="activity-headline">${escHtml(c.top_headline.substring(0, 80))}${c.top_headline.length > 80 ? '...' : ''}</a>
-              </div>
-            `;
-          }).join('')}
-        </div>
-      </div>
-    `;
+    var maxCA = Math.max.apply(null, brief.competitor_activity.map(function(c) { return c.article_count; }));
+    brief.competitor_activity.slice(0, 8).forEach(function(c) {
+      var pct = Math.max((c.article_count / maxCA) * 100, 5);
+      var isSelf = c.entity_id === 'dobbs-group';
+      html += '<div class="comp-row"><span class="comp-name" style="' + (isSelf ? 'color:#8b5cf6;font-weight:700' : '') + '">' + escHtml(c.entity_name) + '</span><div class="comp-bar-wrap"><div class="comp-bar ' + (isSelf ? 'self' : 'other') + '" style="width:' + pct + '%"></div></div><span class="comp-count">' + c.article_count + '</span></div>';
+    });
+  } else {
+    html += '<div class="empty" style="font-size:12px">No activity in last 24h.</div>';
   }
+  html += '</div>';
 
-  // 7. Key Themes
+  // Themes & Trends
+  html += '<div class="brief-card brief-clickable" style="animation-delay:0.75s" onclick="switchTab(\'trends\')">';
+  html += '<div class="brief-card-header"><span class="brief-card-title">\uD83C\uDF10 Themes</span></div>';
   if (brief.key_themes.length > 0) {
-    html += `
-      <div class="brief-section">
-        <h3 class="brief-section-title">Key Themes</h3>
-        <div class="brief-themes">
-          ${brief.key_themes.map(t => `
-            <span class="theme-pill" style="opacity:${Math.min(0.4 + (t.count / brief.key_themes[0].count) * 0.6, 1)}">${escHtml(t.theme)} <strong>${t.count}</strong></span>
-          `).join('')}
-        </div>
-      </div>
-    `;
+    html += '<div class="themes-grid">';
+    brief.key_themes.forEach(function(t, i) {
+      html += '<span class="theme-tag' + (i < 3 ? ' top' : '') + '">' + escHtml(t.theme) + ' <strong>' + t.count + '</strong></span>';
+    });
+    html += '</div>';
+  } else {
+    html += '<div class="empty" style="font-size:12px">No themes extracted.</div>';
   }
+  html += '</div>';
+
+  // AUM Leaderboard
+  var aumBoard = brief.aum_leaderboard || [];
+  html += '<div class="brief-card brief-clickable" style="animation-delay:0.8s" onclick="switchTab(\'aum\')">';
+  html += '<div class="brief-card-header"><span class="brief-card-title">\uD83C\uDFC6 AUM Leaderboard</span></div>';
+  if (aumBoard.length > 0) {
+    var maxAum = Math.max.apply(null, aumBoard.map(function(a) { return a.aum_billions; }));
+    aumBoard.forEach(function(a) {
+      var pct = Math.max((a.aum_billions / maxAum) * 100, 3);
+      var isSelf = a.entity_name.toLowerCase().indexOf('dobbs') >= 0 || a.entity_name.toLowerCase().indexOf('graystone') >= 0;
+      html += '<div class="comp-row"><span class="comp-name" style="' + (isSelf ? 'color:#8b5cf6;font-weight:700' : '') + '">' + escHtml(a.entity_name) + '</span><div class="comp-bar-wrap"><div class="comp-bar ' + (isSelf ? 'self' : 'other') + '" style="width:' + pct + '%"></div></div><span class="comp-count">$' + a.aum_billions.toLocaleString() + 'B</span></div>';
+    });
+  } else {
+    html += '<div class="empty" style="font-size:12px">No AUM data. Add data in the AUM tab.</div>';
+  }
+  html += '</div>';
+
+  html += '</div>'; // end secondary grid
 
   container.innerHTML = html;
+
+  // Animate gauges (Market Pulse + KPI mini gauge)
+  setTimeout(function() {
+    var fill = document.getElementById('gaugeFill');
+    if (fill) fill.setAttribute('stroke-dashoffset', String(dOff));
+    document.querySelectorAll('.kpi-gauge-fill').forEach(function(el) {
+      el.setAttribute('stroke-dashoffset', el.getAttribute('data-target'));
+    });
+  }, 50);
 }
 
 // ── Competitor Discovery ────────────────────────────────
@@ -1521,13 +1655,31 @@ async function loadMarketIndicators() {
 }
 
 function renderMarketIndicators(mkt, sent) {
+  // KPI strip summary
+  var kpiEl = document.getElementById('marketKpiStrip');
+  if (kpiEl) {
+    var nSeries = (mkt.fred_series || []).length;
+    var nCats = {};
+    (mkt.fred_series || []).forEach(function(s) { nCats[s.category || 'Other'] = true; });
+    var catCount = Object.keys(nCats).length;
+    var fgKpi = mkt.fear_greed ? mkt.fear_greed.score : '—';
+    var fgColor = !mkt.fear_greed ? '' : mkt.fear_greed.score <= 25 ? 'kpi-negative' : mkt.fear_greed.score >= 55 ? 'kpi-positive' : 'kpi-neutral';
+    var ysKpi = mkt.yield_spread !== null && mkt.yield_spread !== undefined ? (mkt.yield_spread > 0 ? '+' : '') + mkt.yield_spread + '%' : '—';
+    var ysColor = mkt.yield_spread === null ? '' : mkt.yield_spread < 0 ? 'kpi-negative' : 'kpi-positive';
+    kpiEl.innerHTML =
+      '<div class="kpi-card"><div class="kpi-label">Total Indicators</div><div class="kpi-value">' + nSeries + '</div><div class="kpi-delta kpi-neutral">' + catCount + ' categories</div></div>' +
+      '<div class="kpi-card"><div class="kpi-label">Fear & Greed</div><div class="kpi-value ' + fgColor + '">' + fgKpi + '</div><div class="kpi-delta kpi-neutral">' + escHtml((mkt.fear_greed || {}).rating || '—') + '</div></div>' +
+      '<div class="kpi-card"><div class="kpi-label">Yield Spread (10Y-2Y)</div><div class="kpi-value ' + ysColor + '">' + ysKpi + '</div><div class="kpi-delta kpi-neutral">' + (mkt.yield_spread < 0 ? 'Inverted' : 'Normal') + '</div></div>' +
+      '<div class="kpi-card"><div class="kpi-label">Last Updated</div><div class="kpi-value" style="font-size:16px;">' + (mkt.updated_at ? formatDateTime(mkt.updated_at) : '—') + '</div></div>';
+  }
+
   // Fear & Greed gauge
   const fgEl = document.getElementById('fearGreedSection');
   if (mkt.fear_greed) {
     const fg = mkt.fear_greed;
     const color = fg.score <= 25 ? '#ef4444' : fg.score <= 45 ? '#f97316' : fg.score <= 55 ? '#eab308' : fg.score <= 75 ? '#22c55e' : '#16a34a';
     fgEl.innerHTML = `
-      <div class="fg-card">
+      <a class="fg-card" href="https://edition.cnn.com/markets/fear-and-greed" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;">
         <div class="fg-gauge">
           <svg viewBox="0 0 200 120" width="200" height="120">
             <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="var(--border)" stroke-width="12" stroke-linecap="round"/>
@@ -1545,26 +1697,68 @@ function renderMarketIndicators(mkt, sent) {
             <span>1 Month: <strong>${fg.one_month_ago}</strong></span>
             <span>1 Year: <strong>${fg.one_year_ago}</strong></span>
           </div>
+          <div style="font-size:10px;color:var(--accent, #6366f1);margin-top:8px;opacity:0.7;">Source: CNN Business ↗</div>
         </div>
-      </div>
+      </a>
       ${mkt.yield_spread !== null ? `<div class="yield-spread-card"><span class="yield-label">Yield Curve Spread (10Y-2Y)</span><span class="yield-value ${mkt.yield_spread < 0 ? 'inverted' : ''}">${mkt.yield_spread > 0 ? '+' : ''}${mkt.yield_spread}%</span></div>` : ''}
     `;
   } else {
     fgEl.innerHTML = '<div class="empty">No Fear &amp; Greed data yet. Click "Refresh Data" to fetch.</div>';
   }
 
-  // FRED series cards
-  const fredEl = document.getElementById('fredCardsGrid');
+  // FRED series cards — grouped by category
+  var fredEl = document.getElementById('fredCardsGrid');
   if (mkt.fred_series && mkt.fred_series.length > 0) {
-    fredEl.innerHTML = mkt.fred_series.map(s => {
-      const pts = s.data_points || [];
-      const sparkline = renderSparklineSvg(pts.map(p => p.value));
-      return `<div class="fred-card">
-        <div class="fred-header"><span class="fred-label">${escHtml(s.label)}</span><span class="fred-value">${s.latest_value.toFixed(2)}${s.unit === '%' ? '%' : ''}</span></div>
-        <div class="fred-sparkline">${sparkline}</div>
-        <div class="fred-date">${s.latest_date}</div>
-      </div>`;
-    }).join('');
+    // Group by category
+    var catOrder = ['Volatility & Risk','Interest Rates','Credit Spreads','Inflation','Commodities','Currencies','Liquidity','Labor Market','Housing','Economic Activity'];
+    var catIcons = {'Volatility & Risk':'⚡','Interest Rates':'📈','Credit Spreads':'🔗','Inflation':'🔥','Commodities':'🛢️','Currencies':'💱','Liquidity':'💧','Labor Market':'👷','Housing':'🏠','Economic Activity':'🏭'};
+    var grouped = {};
+    mkt.fred_series.forEach(function(s) {
+      var cat = s.category || 'Other';
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push(s);
+    });
+    var catHtml = '';
+    catOrder.forEach(function(cat) {
+      if (!grouped[cat]) return;
+      var icon = catIcons[cat] || '📊';
+      catHtml += '<div class="fred-category-group"><div class="fred-category-header"><span class="fred-category-icon">' + icon + '</span><span class="fred-category-title">' + escHtml(cat) + '</span></div><div class="fred-category-grid">';
+      grouped[cat].forEach(function(s) {
+        var pts = s.data_points || [];
+        var sparkline = renderSparklineSvg(pts.map(function(p) { return p.value; }));
+        var sourceUrl = s.source_url || ('https://fred.stlouisfed.org/series/' + s.series_id);
+        var valStr = s.unit === '%' || s.unit === '$/bbl' || s.unit === '$/oz' || s.unit === '$/MMBtu' || s.unit === '¥/$' || s.unit === 'Rate'
+          ? s.latest_value.toFixed(2) + (s.unit === '%' ? '%' : ' ' + s.unit)
+          : s.unit === '$M' ? '$' + (s.latest_value / 1e6).toFixed(1) + 'T'
+          : s.unit === '$B' ? '$' + s.latest_value.toFixed(0) + 'B'
+          : s.unit === 'K' ? Math.round(s.latest_value / 1000) + 'K'
+          : s.latest_value.toFixed(2);
+        catHtml += '<a class="fred-card" href="' + escHtml(sourceUrl) + '" target="_blank" rel="noopener">';
+        catHtml += '<div class="fred-header"><span class="fred-label">' + escHtml(s.label) + '</span><span class="fred-value">' + valStr + '</span></div>';
+        catHtml += '<div class="fred-sparkline">' + sparkline + '</div>';
+        catHtml += '<div class="fred-footer"><span class="fred-date">' + s.latest_date + '</span><span class="fred-source">FRED ↗</span></div>';
+        catHtml += '</a>';
+      });
+      catHtml += '</div></div>';
+    });
+    // Any uncategorized
+    Object.keys(grouped).forEach(function(cat) {
+      if (catOrder.indexOf(cat) === -1) {
+        catHtml += '<div class="fred-category-group"><div class="fred-category-header"><span class="fred-category-icon">📊</span><span class="fred-category-title">' + escHtml(cat) + '</span></div><div class="fred-category-grid">';
+        grouped[cat].forEach(function(s) {
+          var pts = s.data_points || [];
+          var sparkline = renderSparklineSvg(pts.map(function(p) { return p.value; }));
+          var sourceUrl = s.source_url || ('https://fred.stlouisfed.org/series/' + s.series_id);
+          catHtml += '<a class="fred-card" href="' + escHtml(sourceUrl) + '" target="_blank" rel="noopener">';
+          catHtml += '<div class="fred-header"><span class="fred-label">' + escHtml(s.label) + '</span><span class="fred-value">' + s.latest_value.toFixed(2) + '</span></div>';
+          catHtml += '<div class="fred-sparkline">' + sparkline + '</div>';
+          catHtml += '<div class="fred-footer"><span class="fred-date">' + s.latest_date + '</span><span class="fred-source">FRED ↗</span></div>';
+          catHtml += '</a>';
+        });
+        catHtml += '</div></div>';
+      }
+    });
+    fredEl.innerHTML = catHtml;
   } else {
     fredEl.innerHTML = '<div class="empty">No FRED data. Set FRED_API_KEY and click "Refresh Data".</div>';
   }
@@ -1626,84 +1820,164 @@ async function loadHoldingsEntities() {
   try {
     const res = await apiFetch('/api/13f');
     const data = await res.json();
-    const sel = document.getElementById('holdingsEntity');
-    sel.innerHTML = '<option value="">Select Entity...</option>';
-    for (const e of data.entities || []) {
-      const opt = document.createElement('option');
-      opt.value = e.cik;
-      opt.textContent = e.name;
-      sel.appendChild(opt);
-    }
-    // Populate periods if available
-    if (data.periods) {
-      window._holdingsPeriods = data.periods;
-    }
+    const allEntities = data.entities || [];
+    window._holdingsEntities = allEntities;
+    renderHoldingsGrid(allEntities);
   } catch (err) {
     console.error('Failed to load 13F entities:', err);
+    document.getElementById('holdingsGrid').innerHTML = '<div class="v2-empty">Failed to load holdings data. Try "Crawl 13F Filings" first.</div>';
   }
 }
 
-async function loadHoldings() {
-  const cik = document.getElementById('holdingsEntity').value;
-  if (!cik) return;
-
-  // Populate period dropdown
-  const periodSel = document.getElementById('holdingsPeriod');
-  const periods = (window._holdingsPeriods || {})[cik] || [];
-  if (periods.length > 0 && periodSel.options.length <= 1) {
-    periodSel.innerHTML = periods.map((p, i) => `<option value="${p}" ${i === 0 ? 'selected' : ''}>${p}</option>`).join('');
-  }
-
-  const period = periodSel.value || undefined;
-  try {
-    const res = await apiFetch(`/api/13f?cik=${encodeURIComponent(cik)}${period ? '&period=' + period : ''}`);
-    const data = await res.json();
-    renderHoldings(data);
-  } catch (err) {
-    console.error('Failed to load holdings:', err);
-  }
+function formatValue(valThousands) {
+  const m = valThousands / 1000;
+  if (m >= 1000000) return '$' + (m / 1000000).toFixed(1) + 'T';
+  if (m >= 1000) return '$' + (m / 1000).toFixed(1) + 'B';
+  if (m >= 1) return '$' + m.toFixed(0) + 'M';
+  return '$' + valThousands.toLocaleString() + 'K';
 }
 
-function renderHoldings(data) {
-  const summaryEl = document.getElementById('holdingsSummary');
-  const tableEl = document.getElementById('holdingsTable');
+function renderHoldingsGrid(allEntities) {
+  const kpiEl = document.getElementById('holdingsKpi');
+  const gridEl = document.getElementById('holdingsGrid');
 
-  if (!data.filing || !data.filing.holdings || data.filing.holdings.length === 0) {
-    summaryEl.innerHTML = '';
-    tableEl.innerHTML = '<div class="empty">No holdings data for this entity/period. Run "Crawl 13F Filings" first.</div>';
+  if (!allEntities || allEntities.length === 0) {
+    kpiEl.innerHTML = '';
+    gridEl.innerHTML = '<div class="v2-empty">No 13F holdings data available. Click "Crawl 13F Filings" to fetch data from SEC EDGAR.</div>';
     return;
   }
 
-  const f = data.filing;
-  const totalVal = f.total_value_thousands / 1000; // Convert to millions
-  summaryEl.innerHTML = `
-    <div class="holdings-stats">
-      <div class="holdings-stat"><span class="stat-label">Total Value</span><span class="stat-value">$${totalVal >= 1000 ? (totalVal / 1000).toFixed(1) + 'B' : totalVal.toFixed(0) + 'M'}</span></div>
-      <div class="holdings-stat"><span class="stat-label">Holdings</span><span class="stat-value">${f.holdings.length}</span></div>
-      <div class="holdings-stat"><span class="stat-label">Period</span><span class="stat-value">${f.period}</span></div>
-      <div class="holdings-stat"><span class="stat-label">Filed</span><span class="stat-value">${f.filed_date}</span></div>
-    </div>
+  // KPI strip
+  const totalEntities = allEntities.length;
+  const totalVal = allEntities.reduce((s, e) => s + (e.total_value_thousands || 0), 0);
+  const totalHoldings = allEntities.reduce((s, e) => s + (e.holdings_count || 0), 0);
+  kpiEl.innerHTML = `
+    <div class="kpi-card"><div class="kpi-value">${totalEntities}</div><div class="kpi-label">Entities</div></div>
+    <div class="kpi-card"><div class="kpi-value">${formatValue(totalVal)}</div><div class="kpi-label">Total 13F Value</div></div>
+    <div class="kpi-card"><div class="kpi-value">${totalHoldings.toLocaleString()}</div><div class="kpi-label">Total Holdings</div></div>
   `;
 
-  // Top 50 holdings table
-  const top = f.holdings.slice(0, 50);
-  tableEl.innerHTML = `
-    <table class="data-table">
-      <thead><tr><th>#</th><th>Issuer</th><th>CUSIP</th><th>Value ($K)</th><th>Shares</th><th>% of Portfolio</th></tr></thead>
-      <tbody>${top.map((h, i) => {
-        const pct = ((h.value_thousands / f.total_value_thousands) * 100).toFixed(2);
-        return `<tr>
-          <td>${i + 1}</td>
-          <td>${escHtml(h.issuer)}</td>
-          <td class="mono">${h.cusip}</td>
-          <td class="num">${h.value_thousands.toLocaleString()}</td>
-          <td class="num">${h.shares.toLocaleString()}</td>
-          <td class="num">${pct}%</td>
-        </tr>`;
-      }).join('')}</tbody>
-    </table>
-    ${f.holdings.length > 50 ? `<p class="table-note">Showing top 50 of ${f.holdings.length} holdings</p>` : ''}
-  `;
+  // Entity cards
+  gridEl.innerHTML = allEntities.map((e, idx) => {
+    const val = formatValue(e.total_value_thousands || 0);
+    const topTags = (e.top_holdings || []).map(h =>
+      '<span class="holdings-top-tag">' + escHtml(h.issuer) + ' (' + h.pct + '%)</span>'
+    ).join('');
+    return `
+      <div class="holdings-entity-card" data-cik="${escHtml(e.cik)}" onclick="toggleHoldingsCard(this)" style="animation-delay:${Math.min(idx * 0.04, 0.6)}s">
+        <div class="holdings-card-header">
+          <span class="holdings-card-name">${escHtml(e.name)}</span>
+          <span class="holdings-card-chevron">&#9660;</span>
+        </div>
+        <div class="holdings-card-highlights">
+          <div class="holdings-highlight"><span class="holdings-highlight-val">${val}</span><span class="holdings-highlight-label">Total Value</span></div>
+          <div class="holdings-highlight"><span class="holdings-highlight-val">${(e.holdings_count || 0).toLocaleString()}</span><span class="holdings-highlight-label">Holdings</span></div>
+          <div class="holdings-highlight"><span class="holdings-highlight-val">${e.latest_period || '-'}</span><span class="holdings-highlight-label">Period</span></div>
+        </div>
+        ${topTags ? '<div class="holdings-card-top">' + topTags + '</div>' : ''}
+        <div class="holdings-card-detail" style="display:none"></div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function toggleHoldingsCard(card) {
+  const detailEl = card.querySelector('.holdings-card-detail');
+  if (card.classList.contains('expanded')) {
+    card.classList.remove('expanded');
+    detailEl.style.display = 'none';
+    return;
+  }
+
+  // Collapse any other expanded card
+  document.querySelectorAll('.holdings-entity-card.expanded').forEach(c => {
+    c.classList.remove('expanded');
+    c.querySelector('.holdings-card-detail').style.display = 'none';
+  });
+
+  card.classList.add('expanded');
+  detailEl.style.display = 'block';
+
+  // If already loaded, just show
+  if (detailEl.dataset.loaded) return;
+
+  detailEl.innerHTML = '<div class="loading" style="padding:12px">Loading holdings...</div>';
+  const cik = card.dataset.cik;
+
+  try {
+    const res = await apiFetch('/api/13f?cik=' + encodeURIComponent(cik));
+    const data = await res.json();
+    if (!data.filing || !data.filing.holdings || data.filing.holdings.length === 0) {
+      detailEl.innerHTML = '<div class="v2-empty" style="margin:0">No holdings data for this entity.</div>';
+      detailEl.dataset.loaded = '1';
+      return;
+    }
+
+    const f = data.filing;
+    // Period selector if multiple periods
+    const periods = data.periods || [];
+    let periodHtml = '';
+    if (periods.length > 1) {
+      periodHtml = '<div style="margin-bottom:12px"><select class="holdings-period-select" onchange="switchHoldingsPeriod(this, \'' + escHtml(cik) + '\')">' +
+        periods.map(p => '<option value="' + p + '"' + (p === f.period ? ' selected' : '') + '>' + p + '</option>').join('') +
+        '</select></div>';
+    }
+
+    const top = f.holdings.slice(0, 50);
+    detailEl.innerHTML = periodHtml + `
+      <div class="v2-table-card" style="margin:0">
+      <table class="v2-table">
+        <thead><tr><th>#</th><th>Issuer</th><th>CUSIP</th><th>Value</th><th>Shares</th><th>% Port</th></tr></thead>
+        <tbody>${top.map((h, i) => {
+          const pct = f.total_value_thousands > 0 ? ((h.value_thousands / f.total_value_thousands) * 100).toFixed(2) : '0.00';
+          return '<tr><td>' + (i + 1) + '</td><td>' + escHtml(h.issuer) + '</td><td class="mono">' + (h.cusip || '') + '</td><td class="num">' + formatValue(h.value_thousands) + '</td><td class="num">' + (h.shares || 0).toLocaleString() + '</td><td class="num">' + pct + '%</td></tr>';
+        }).join('')}</tbody>
+      </table>
+      </div>
+      ${f.holdings.length > 50 ? '<p class="table-note" style="padding:8px 0;margin:0;font-size:11px;color:var(--text-muted)">Showing top 50 of ' + f.holdings.length + ' holdings</p>' : ''}
+    `;
+    detailEl.dataset.loaded = '1';
+  } catch (err) {
+    console.error('Failed to load holdings detail:', err);
+    detailEl.innerHTML = '<div class="v2-empty" style="margin:0">Error loading holdings.</div>';
+  }
+}
+
+async function switchHoldingsPeriod(select, cik) {
+  const card = select.closest('.holdings-entity-card');
+  const detailEl = card.querySelector('.holdings-card-detail');
+  const period = select.value;
+
+  detailEl.dataset.loaded = '';
+  const selectHtml = select.parentElement.outerHTML;
+  detailEl.innerHTML = selectHtml + '<div class="loading" style="padding:12px">Loading...</div>';
+
+  try {
+    const res = await apiFetch('/api/13f?cik=' + encodeURIComponent(cik) + '&period=' + encodeURIComponent(period));
+    const data = await res.json();
+    const f = data.filing;
+    if (!f || !f.holdings || f.holdings.length === 0) {
+      detailEl.innerHTML = selectHtml + '<div class="v2-empty" style="margin:0">No data for this period.</div>';
+      return;
+    }
+
+    const top = f.holdings.slice(0, 50);
+    detailEl.innerHTML = selectHtml + `
+      <div class="v2-table-card" style="margin:0">
+      <table class="v2-table">
+        <thead><tr><th>#</th><th>Issuer</th><th>CUSIP</th><th>Value</th><th>Shares</th><th>% Port</th></tr></thead>
+        <tbody>${top.map((h, i) => {
+          const pct = f.total_value_thousands > 0 ? ((h.value_thousands / f.total_value_thousands) * 100).toFixed(2) : '0.00';
+          return '<tr><td>' + (i + 1) + '</td><td>' + escHtml(h.issuer) + '</td><td class="mono">' + (h.cusip || '') + '</td><td class="num">' + formatValue(h.value_thousands) + '</td><td class="num">' + (h.shares || 0).toLocaleString() + '</td><td class="num">' + pct + '%</td></tr>';
+        }).join('')}</tbody>
+      </table>
+      </div>
+      ${f.holdings.length > 50 ? '<p class="table-note" style="padding:8px 0;margin:0;font-size:11px;color:var(--text-muted)">Showing top 50 of ' + f.holdings.length + ' holdings</p>' : ''}
+    `;
+    detailEl.dataset.loaded = '1';
+  } catch (err) {
+    console.error('Failed to switch period:', err);
+  }
 }
 
 async function trigger13FCrawl() {
@@ -1711,7 +1985,6 @@ async function trigger13FCrawl() {
   btn.disabled = true;
 
   try {
-    // Get batch info first
     const infoRes = await apiFetch('/api/13f/crawl', { method: 'POST' });
     const info = await infoRes.json();
     const totalBatches = info.totalBatches || 1;
@@ -1730,7 +2003,6 @@ async function trigger13FCrawl() {
 
     btn.textContent = `Done! ${totalFilings} filings saved. Reloading...`;
     await loadHoldingsEntities();
-    loadHoldings();
   } catch (err) {
     console.error('13F crawl failed:', err);
     btn.textContent = 'Crawl failed — try again';
@@ -1775,36 +2047,52 @@ async function loadAdvAnalyses() {
 function renderAdvAnalyses(analyses) {
   const container = document.getElementById('advGrid');
   if (!analyses || analyses.length === 0) {
-    container.innerHTML = '<div class="empty">No ADV data yet. Click "Analyze ADV Filings" to parse Form ADV from SEC EDGAR.</div>';
+    container.innerHTML = '<div class="v2-empty">No ADV data yet. Click "Scan IAPD" to fetch Form ADV registrations.</div>';
     return;
   }
 
-  container.innerHTML = '';
-  const sorted = [...analyses].sort((a, b) => b.total_aum - a.total_aum);
+  const sorted = [...analyses].sort((a, b) => (a.firm_name || '').localeCompare(b.firm_name || ''));
+  const active = sorted.filter(a => a.registration_status === 'ACTIVE');
+  const withDisclosures = sorted.filter(a => a.has_disclosures);
+  const totalStates = new Set(sorted.flatMap(a => a.notice_states || [])).size;
 
-  for (const a of sorted) {
+  container.innerHTML = `<div class="v2-kpi-strip">
+    <div class="kpi-card"><div class="kpi-value">${sorted.length}</div><div class="kpi-label">Firms Found</div></div>
+    <div class="kpi-card"><div class="kpi-value">${active.length}</div><div class="kpi-label">Active RIAs</div></div>
+    <div class="kpi-card"><div class="kpi-value">${withDisclosures.length}</div><div class="kpi-label">With Disclosures</div></div>
+    <div class="kpi-card"><div class="kpi-value">${totalStates}</div><div class="kpi-label">States Covered</div></div>
+  </div>`;
+
+  for (let idx = 0; idx < sorted.length; idx++) {
+    const a = sorted[idx];
     const card = document.createElement('div');
     card.className = 'adv-card';
-    const aumStr = a.total_aum >= 1000 ? '$' + (a.total_aum / 1000).toFixed(1) + 'T' : '$' + a.total_aum.toFixed(1) + 'B';
-    const discPct = a.total_aum > 0 ? ((a.discretionary_aum / a.total_aum) * 100).toFixed(0) : 0;
+    card.style.animationDelay = (idx * 0.04) + 's';
+    const statusClass = a.registration_status === 'ACTIVE' ? 'adv-status-active' : 'adv-status-inactive';
+    const stateCount = (a.notice_states || []).length;
 
     card.innerHTML = `
       <div class="adv-card-header">
-        <h3>${escHtml(a.entity_name)}</h3>
-        <span class="adv-aum">${aumStr}</span>
+        <h3>${escHtml(a.firm_name || a.entity_name || 'Unknown')}</h3>
+        <span class="adv-status ${statusClass}">${escHtml(a.registration_status || 'Unknown')}</span>
       </div>
+      ${a.other_names && a.other_names.length > 0 ? `<div class="adv-aka">aka ${a.other_names.map(n => escHtml(n)).join(', ')}</div>` : ''}
       <div class="adv-metrics">
-        <div class="adv-metric"><span class="adv-metric-label">Employees</span><span class="adv-metric-value">${a.employees.toLocaleString()}</span></div>
-        <div class="adv-metric"><span class="adv-metric-label">Advisory</span><span class="adv-metric-value">${a.advisory_employees.toLocaleString()}</span></div>
-        <div class="adv-metric"><span class="adv-metric-label">Accounts</span><span class="adv-metric-value">${a.total_accounts.toLocaleString()}</span></div>
-        <div class="adv-metric"><span class="adv-metric-label">Discretionary</span><span class="adv-metric-value">${discPct}%</span></div>
+        <div class="adv-metric"><span class="adv-metric-label">CRD #</span><span class="adv-metric-value">${escHtml(a.crd || 'N/A')}</span></div>
+        <div class="adv-metric"><span class="adv-metric-label">SEC #</span><span class="adv-metric-value">${escHtml(a.sec_number || 'N/A')}</span></div>
+        <div class="adv-metric"><span class="adv-metric-label">Branches</span><span class="adv-metric-value">${a.branches_count || 0}</span></div>
+        <div class="adv-metric"><span class="adv-metric-label">Notice States</span><span class="adv-metric-value">${stateCount}</span></div>
       </div>
-      <div class="adv-details">
-        ${a.compensation_methods.length > 0 ? `<div class="adv-detail-row"><span class="adv-detail-label">Compensation:</span> ${a.compensation_methods.map(c => escHtml(c)).join(', ')}</div>` : ''}
-        ${a.disciplinary_disclosures ? '<div class="adv-detail-row adv-warning">Has disciplinary disclosures</div>' : ''}
-      </div>
+      ${a.office_address ? `<div class="adv-detail-row"><span class="adv-detail-label">Office:</span> ${escHtml(a.office_address)}</div>` : ''}
+      ${a.has_disclosures ? '<div class="adv-detail-row adv-warning">Has regulatory disclosures</div>' : ''}
+      ${a.brochure_name ? `<div class="adv-detail-row"><span class="adv-detail-label">Brochure:</span> ${escHtml(a.brochure_name)} (${escHtml(a.brochure_date || '')})</div>` : ''}
       <div class="adv-footer">
-        <span class="adv-date">Filed: ${a.filing_date || 'N/A'}</span>
+        <span class="adv-date">ADV Filed: ${escHtml(a.filing_date || 'N/A')}</span>
+        <div class="adv-links">
+          ${a.iapd_url ? `<a href="${escHtml(a.iapd_url)}" target="_blank" rel="noopener" class="adv-link">IAPD</a>` : ''}
+          ${a.pdf_url ? `<a href="${escHtml(a.pdf_url)}" target="_blank" rel="noopener" class="adv-link">PDF</a>` : ''}
+          ${a.brochure_id ? `<a href="https://files.adviserinfo.sec.gov/IAPD/Content/Common/crd_iapd_Brochure.aspx?BRCHR_VRSN_ID=${a.brochure_id}" target="_blank" rel="noopener" class="adv-link">Brochure</a>` : ''}
+        </div>
       </div>
     `;
     container.appendChild(card);
@@ -1814,17 +2102,17 @@ function renderAdvAnalyses(analyses) {
 async function triggerAdvCrawl() {
   const btn = document.getElementById('btnAdvCrawl');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Analyzing...';
+  btn.innerHTML = '<span class="spinner"></span> Scanning IAPD...';
 
   try {
     const res = await apiFetch('/api/adv/crawl', { method: 'POST' });
     const data = await res.json();
-    btn.textContent = `Done! (${data.analyzed} analyzed)`;
-    setTimeout(() => { btn.textContent = 'Analyze ADV Filings'; btn.disabled = false; }, 3000);
+    btn.textContent = `Done! (${data.analyzed} found)`;
+    setTimeout(() => { btn.textContent = 'Scan IAPD'; btn.disabled = false; }, 3000);
     loadAdvAnalyses();
   } catch (err) {
     btn.textContent = 'Error';
-    setTimeout(() => { btn.textContent = 'Analyze ADV Filings'; btn.disabled = false; }, 3000);
+    setTimeout(() => { btn.textContent = 'Scan IAPD'; btn.disabled = false; }, 3000);
   }
 }
 
@@ -1840,19 +2128,48 @@ function populateTrendEntitySelect() {
   }
 }
 
-async function loadTrends() {
+async function loadTrends(autoCapture) {
   const metric = document.getElementById('trendMetric').value;
   const entity = document.getElementById('trendEntity').value;
-  const params = new URLSearchParams();
-  if (metric) params.set('metric', metric);
-  if (entity) params.set('entity', entity);
+  const chartEl = document.getElementById('trendsChart');
 
   try {
+    // First check if ANY trend data exists (unfiltered)
+    const checkRes = await apiFetch('/api/trends');
+    const allSnapshots = await checkRes.json();
+
+    // Auto-capture on first visit if store is completely empty
+    if ((!allSnapshots || allSnapshots.length === 0) && !autoCapture) {
+      chartEl.innerHTML = '<div class="v2-empty"><span class="spinner"></span> No trend data found — capturing first snapshot...</div>';
+      try {
+        await apiFetch('/api/trends', { method: 'POST' });
+        return loadTrends(true);
+      } catch (e) {
+        console.error('Auto-capture failed:', e);
+        chartEl.innerHTML = '<div class="v2-empty">Failed to capture initial snapshot. Try clicking "Capture Snapshot" manually.</div>';
+        return;
+      }
+    }
+
+    // Now fetch with user's filters
+    const params = new URLSearchParams();
+    if (metric) params.set('metric', metric);
+    if (entity) params.set('entity', entity);
     const res = await apiFetch(`/api/trends?${params}`);
     const snapshots = await res.json();
+
+    // If filtered results are empty but unfiltered has data, show helpful message
+    if ((!snapshots || snapshots.length === 0) && allSnapshots && allSnapshots.length > 0) {
+      const availableTypes = [...new Set(allSnapshots.map(function(s) { return s.metric_type; }))];
+      chartEl.innerHTML = '<div class="v2-empty">No data for this metric/entity filter. Available metrics: ' + availableTypes.join(', ') + '</div>';
+      document.getElementById('trendsTable').innerHTML = '';
+      return;
+    }
+
     renderTrends(snapshots, metric);
   } catch (err) {
     console.error('Failed to load trends:', err);
+    chartEl.innerHTML = '<div class="v2-empty">Failed to load trend data.</div>';
   }
 }
 
@@ -1861,7 +2178,7 @@ function renderTrends(snapshots, metric) {
   const tableEl = document.getElementById('trendsTable');
 
   if (!snapshots || snapshots.length === 0) {
-    chartEl.innerHTML = '<div class="empty">No trend data yet. Click "Capture Snapshot" to start tracking.</div>';
+    chartEl.innerHTML = '<div class="v2-empty">No trend data yet. Click "Capture Snapshot" to start tracking.</div>';
     tableEl.innerHTML = '';
     return;
   }
@@ -1869,67 +2186,98 @@ function renderTrends(snapshots, metric) {
   // Group by entity
   const byEntity = {};
   for (const s of snapshots) {
-    if (!byEntity[s.entity_name]) byEntity[s.entity_name] = [];
-    byEntity[s.entity_name].push(s);
+    const key = s.entity_name + (s.metric_type ? ' (' + s.metric_type + ')' : '');
+    if (!byEntity[key]) byEntity[key] = [];
+    byEntity[key].push(s);
   }
 
-  // SVG line chart
-  const w = 800, h = 300, pad = 50;
-  const allValues = snapshots.map(s => s.value);
-  const minV = Math.min(...allValues);
-  const maxV = Math.max(...allValues);
-  const range = maxV - minV || 1;
   const allDates = [...new Set(snapshots.map(s => s.date))].sort();
   const colors = ['#4a6cf7', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#f97316'];
+  const entityKeys = Object.keys(byEntity);
 
-  let svgLines = '';
-  let legendHtml = '';
-  let colorIdx = 0;
+  if (allDates.length <= 1) {
+    // ── BAR CHART for single-date snapshot ──
+    const maxVal = Math.max(...snapshots.map(s => Math.abs(Number(s.value) || 0)), 0.01);
+    let barsHtml = '';
+    entityKeys.forEach(function(key, i) {
+      const pts = byEntity[key];
+      const val = Number(pts[0].value) || 0;
+      const pct = Math.max((Math.abs(val) / maxVal) * 100, 3);
+      const color = colors[i % colors.length];
+      barsHtml += '<div class="trend-bar-row" style="animation-delay:' + (i * 0.04) + 's">';
+      barsHtml += '<span class="trend-bar-label">' + escHtml(key) + '</span>';
+      barsHtml += '<div class="trend-bar-track"><div class="trend-bar-fill" style="width:' + pct + '%;background:' + color + '"></div></div>';
+      barsHtml += '<span class="trend-bar-value">' + val.toFixed(2) + '</span>';
+      barsHtml += '</div>';
+    });
+    chartEl.innerHTML = '<div class="brief-card" style="padding:20px;margin-bottom:14px;">' +
+      '<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Snapshot: ' + escHtml(allDates[0] || 'Today') + ' &middot; Capture more snapshots over time to see trend lines</div>' +
+      barsHtml + '</div>';
+  } else {
+    // ── LINE CHART for multi-date data ──
+    const w = 800, h = 300, pad = 50;
+    const allValues = snapshots.map(s => Number(s.value) || 0);
+    const minV = Math.min(...allValues);
+    const maxV = Math.max(...allValues);
+    const range = maxV - minV || 1;
 
-  for (const [name, pts] of Object.entries(byEntity)) {
-    const sorted = pts.sort((a, b) => a.date.localeCompare(b.date));
-    const color = colors[colorIdx % colors.length];
-    const points = sorted.map(p => {
-      const x = pad + (allDates.indexOf(p.date) / Math.max(allDates.length - 1, 1)) * (w - 2 * pad);
-      const y = pad + (1 - (p.value - minV) / range) * (h - 2 * pad);
-      return `${x},${y}`;
-    }).join(' ');
-    svgLines += `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="2"/>`;
-    legendHtml += `<span class="trend-legend-item"><span class="trend-legend-dot" style="background:${color}"></span>${escHtml(name)}</span>`;
-    colorIdx++;
+    let svgLines = '';
+    let legendHtml = '';
+    let colorIdx = 0;
+
+    for (const [name, pts] of Object.entries(byEntity)) {
+      const sorted = pts.sort((a, b) => a.date.localeCompare(b.date));
+      const color = colors[colorIdx % colors.length];
+      const coords = sorted.map(p => {
+        const x = pad + (allDates.indexOf(p.date) / Math.max(allDates.length - 1, 1)) * (w - 2 * pad);
+        const y = pad + (1 - ((Number(p.value) || 0) - minV) / range) * (h - 2 * pad);
+        return { x: x, y: y };
+      });
+      if (coords.length > 1) {
+        svgLines += `<polyline points="${coords.map(c => c.x + ',' + c.y).join(' ')}" fill="none" stroke="${color}" stroke-width="2"/>`;
+      }
+      coords.forEach(c => {
+        svgLines += `<circle cx="${c.x}" cy="${c.y}" r="4" fill="${color}" stroke="var(--surface)" stroke-width="2"/>`;
+      });
+      legendHtml += `<span class="trend-legend-item"><span class="trend-legend-dot" style="background:${color}"></span>${escHtml(name)}</span>`;
+      colorIdx++;
+    }
+
+    const yLabels = [minV, minV + range / 2, maxV].map(v => {
+      const y = pad + (1 - (v - minV) / range) * (h - 2 * pad);
+      return `<text x="${pad - 8}" y="${y + 4}" text-anchor="end" fill="var(--text-muted)" font-size="11">${v.toFixed(1)}</text>`;
+    }).join('');
+
+    const step = Math.max(1, Math.floor(allDates.length / 6));
+    const xLabels = allDates.filter((_, i) => i % step === 0).map(d => {
+      const x = pad + (allDates.indexOf(d) / Math.max(allDates.length - 1, 1)) * (w - 2 * pad);
+      return `<text x="${x}" y="${h - 5}" text-anchor="middle" fill="var(--text-muted)" font-size="10">${d.substring(5)}</text>`;
+    }).join('');
+
+    chartEl.innerHTML = `
+      <div class="brief-card" style="padding:20px; margin-bottom:14px;">
+        <div class="trend-legend" style="margin-bottom:12px;">${legendHtml}</div>
+        <svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" class="trend-svg">
+          <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${h - pad}" stroke="var(--border)" stroke-width="1"/>
+          <line x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}" stroke="var(--border)" stroke-width="1"/>
+          ${yLabels}${xLabels}${svgLines}
+        </svg>
+      </div>
+    `;
   }
 
-  // Y-axis labels
-  const yLabels = [minV, minV + range / 2, maxV].map(v => {
-    const y = pad + (1 - (v - minV) / range) * (h - 2 * pad);
-    return `<text x="${pad - 8}" y="${y + 4}" text-anchor="end" fill="var(--text-muted)" font-size="11">${v.toFixed(1)}</text>`;
-  }).join('');
-
-  // X-axis labels (max 6)
-  const step = Math.max(1, Math.floor(allDates.length / 6));
-  const xLabels = allDates.filter((_, i) => i % step === 0).map(d => {
-    const x = pad + (allDates.indexOf(d) / Math.max(allDates.length - 1, 1)) * (w - 2 * pad);
-    return `<text x="${x}" y="${h - 5}" text-anchor="middle" fill="var(--text-muted)" font-size="10">${d.substring(5)}</text>`;
-  }).join('');
-
-  chartEl.innerHTML = `
-    <div class="trend-legend">${legendHtml}</div>
-    <svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" class="trend-svg">
-      <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${h - pad}" stroke="var(--border)" stroke-width="1"/>
-      <line x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}" stroke="var(--border)" stroke-width="1"/>
-      ${yLabels}${xLabels}${svgLines}
-    </svg>
-  `;
-
   // Table
-  const metricLabel = metric === 'aum' ? 'AUM ($B)' : metric === 'sentiment' ? 'Score' : 'Count';
+  const metricLabel = metric === 'aum' ? 'AUM ($B)' : metric === 'sentiment' ? 'Score' : metric === 'article_count' ? 'Count' : 'Value';
+  const showMetricCol = !metric; // Show metric type column when "All Metrics" selected
   tableEl.innerHTML = `
-    <table class="data-table">
-      <thead><tr><th>Date</th><th>Entity</th><th>${metricLabel}</th></tr></thead>
+    <div class="v2-table-card">
+    <table class="v2-table">
+      <thead><tr><th>Date</th><th>Entity</th>${showMetricCol ? '<th>Metric</th>' : ''}<th>${metricLabel}</th></tr></thead>
       <tbody>${snapshots.slice(-50).reverse().map(s => `
-        <tr><td>${s.date}</td><td>${escHtml(s.entity_name)}</td><td class="num">${s.value.toFixed(2)}</td></tr>
+        <tr><td>${s.date || ''}</td><td>${escHtml(s.entity_name || '')}</td>${showMetricCol ? '<td>' + escHtml(s.metric_type || '') + '</td>' : ''}<td class="num">${(Number(s.value) || 0).toFixed(2)}</td></tr>
       `).join('')}</tbody>
     </table>
+    </div>
   `;
 }
 
@@ -1968,28 +2316,42 @@ async function loadPersonnel() {
 function renderPersonnel(changes) {
   const container = document.getElementById('personnelList');
   if (!changes || changes.length === 0) {
-    container.innerHTML = '<div class="empty">No personnel changes found. Click "Scan for Changes" to monitor leadership moves.</div>';
+    container.innerHTML = '<div class="v2-empty">No personnel changes found. Click "Scan for Changes" to monitor leadership moves.</div>';
     return;
   }
 
-  container.innerHTML = '';
+  // KPI strip
+  const hires = changes.filter(p => (p.change_type || '') === 'hire').length;
+  const departures = changes.filter(p => (p.change_type || '') === 'departure').length;
+  const promotions = changes.filter(p => (p.change_type || '') === 'promotion').length;
+  const board = changes.filter(p => (p.change_type || '') === 'board_change').length;
+  const kpiHtml = `<div class="v2-kpi-strip">
+    <div class="kpi-card"><div class="kpi-value">${changes.length}</div><div class="kpi-label">Total Changes</div></div>
+    <div class="kpi-card"><div class="kpi-value" style="color:var(--positive)">${hires}</div><div class="kpi-label">Hires</div></div>
+    <div class="kpi-card"><div class="kpi-value" style="color:var(--negative)">${departures}</div><div class="kpi-label">Departures</div></div>
+    <div class="kpi-card"><div class="kpi-value" style="color:var(--primary)">${promotions}</div><div class="kpi-label">Promotions</div></div>
+    <div class="kpi-card"><div class="kpi-value" style="color:#8b5cf6">${board}</div><div class="kpi-label">Board Changes</div></div>
+  </div>`;
+
+  container.innerHTML = kpiHtml;
   for (const p of changes) {
     const card = document.createElement('div');
-    const typeClass = p.change_type === 'departure' ? 'negative' : p.change_type === 'hire' ? 'positive' : 'neutral';
+    const ct = p.change_type || 'unknown';
+    const typeClass = ct === 'departure' ? 'negative' : ct === 'hire' ? 'positive' : 'neutral';
     card.className = `personnel-card personnel-${typeClass}`;
     card.innerHTML = `
       <div class="personnel-header">
-        <span class="personnel-type type-${p.change_type}">${p.change_type.toUpperCase()}</span>
-        <span class="personnel-date">${p.date}</span>
+        <span class="personnel-type type-${ct}">${ct.toUpperCase()}</span>
+        <span class="personnel-date">${p.date || ''}</span>
       </div>
-      <div class="personnel-name">${escHtml(p.person_name)}</div>
-      <div class="personnel-entity">${escHtml(p.entity_name)}</div>
+      <div class="personnel-name">${escHtml(p.person_name || 'Unknown')}</div>
+      <div class="personnel-entity">${escHtml(p.entity_name || '')}</div>
       <div class="personnel-roles">
         ${p.old_role ? `<span class="personnel-old-role">${escHtml(p.old_role)}</span>` : ''}
         ${p.old_role && p.new_role ? ' &rarr; ' : ''}
         ${p.new_role ? `<span class="personnel-new-role">${escHtml(p.new_role)}</span>` : ''}
       </div>
-      <div class="personnel-details">${escHtml(p.details).substring(0, 200)}</div>
+      <div class="personnel-details">${escHtml(p.details || '').substring(0, 200)}</div>
       ${p.source_url ? `<a href="${escHtml(p.source_url)}" target="_blank" rel="noopener" class="read-more">Source &#8594;</a>` : ''}
     `;
     container.appendChild(card);
@@ -2013,89 +2375,6 @@ async function triggerPersonnelCrawl() {
   }
 }
 
-// ── Mandates ────────────────────────────────────────────
-function populateMandateEntitySelect() {
-  const select = document.getElementById('mandateEntity');
-  if (!select || select.options.length > 1) return;
-  for (const e of entities.all || []) {
-    const opt = document.createElement('option');
-    opt.value = e.id;
-    opt.textContent = e.name;
-    select.appendChild(opt);
-  }
-}
-
-function toggleMandateForm() {
-  const form = document.getElementById('mandateForm');
-  form.style.display = form.style.display === 'none' ? 'block' : 'none';
-}
-
-async function loadMandates() {
-  try {
-    const res = await apiFetch('/api/mandates');
-    const events = await res.json();
-    renderMandates(events);
-  } catch (err) {
-    console.error('Failed to load mandates:', err);
-  }
-}
-
-function renderMandates(events) {
-  const container = document.getElementById('mandatesList');
-  if (!events || events.length === 0) {
-    container.innerHTML = '<div class="empty">No mandate events tracked yet. Use "+ Add Event" to log wins, losses, and RFPs.</div>';
-    return;
-  }
-
-  container.innerHTML = `
-    <table class="data-table">
-      <thead><tr><th>Date</th><th>Entity</th><th>Client</th><th>Type</th><th>Event</th><th>Size</th><th>Asset Class</th><th>Source</th></tr></thead>
-      <tbody>${events.map(m => {
-        const eventClass = m.event_type === 'win' ? 'positive' : m.event_type === 'loss' ? 'negative' : 'neutral';
-        return `<tr>
-          <td>${m.date}</td>
-          <td>${escHtml(m.entity_name)}</td>
-          <td>${escHtml(m.client_name)}</td>
-          <td>${escHtml(m.client_type)}</td>
-          <td><span class="mandate-event-badge mandate-${eventClass}">${m.event_type.toUpperCase()}</span></td>
-          <td class="num">${m.mandate_size_billions ? '$' + m.mandate_size_billions + 'B' : '-'}</td>
-          <td>${escHtml(m.asset_class || '-')}</td>
-          <td>${m.source ? `<a href="${escHtml(m.source)}" target="_blank" rel="noopener">Link</a>` : '-'}</td>
-        </tr>`;
-      }).join('')}</tbody>
-    </table>
-  `;
-}
-
-async function addMandateEvent() {
-  const entityId = document.getElementById('mandateEntity').value;
-  const entity = entities.all.find(e => e.id === entityId);
-  if (!entityId || !entity) { alert('Select an entity.'); return; }
-
-  const body = {
-    entity_id: entityId,
-    entity_name: entity.name,
-    client_name: document.getElementById('mandateClient').value,
-    client_type: document.getElementById('mandateClientType').value,
-    event_type: document.getElementById('mandateEventType').value,
-    mandate_size_billions: parseFloat(document.getElementById('mandateSize').value) || undefined,
-    asset_class: document.getElementById('mandateAssetClass').value || undefined,
-    source: document.getElementById('mandateSource').value,
-    notes: document.getElementById('mandateNotes').value,
-  };
-
-  try {
-    await apiFetch('/api/mandates', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    document.getElementById('mandateForm').style.display = 'none';
-    loadMandates();
-  } catch (err) {
-    console.error('Failed to add mandate:', err);
-  }
-}
 
 // ── Jobs ────────────────────────────────────────────────
 async function loadJobs() {
@@ -2120,10 +2399,16 @@ function renderJobTrends(trends) {
     return;
   }
 
-  const sorted = [...trends].sort((a, b) => b.total_postings - a.total_postings);
-  const maxPost = sorted[0].total_postings || 1;
+  const sorted = [...trends].sort((a, b) => (b.total_postings || 0) - (a.total_postings || 0));
+  const maxPost = (sorted[0] && sorted[0].total_postings) || 1;
+  const totalPostings = sorted.reduce((s, t) => s + (t.total_postings || 0), 0);
 
   container.innerHTML = `
+    <div class="v2-kpi-strip">
+      <div class="kpi-card"><div class="kpi-value">${totalPostings}</div><div class="kpi-label">Total Postings</div></div>
+      <div class="kpi-card"><div class="kpi-value">${sorted.length}</div><div class="kpi-label">Entities Hiring</div></div>
+      <div class="kpi-card"><div class="kpi-value">${sorted[0]?.entity_name || '-'}</div><div class="kpi-label" style="font-size:9px">Top Hirer</div></div>
+    </div>
     <h3 style="margin-bottom:12px;">Hiring Trends by Entity</h3>
     <div class="job-trends-grid">
       ${sorted.map(t => {
@@ -2147,25 +2432,27 @@ function renderJobTrends(trends) {
 function renderJobPostings(postings) {
   const container = document.getElementById('jobPostings');
   if (!postings || postings.length === 0) {
-    container.innerHTML = '<div class="empty">No job postings found. Click "Scan Job Postings" to crawl.</div>';
+    container.innerHTML = '<div class="v2-empty">No job postings found. Click "Scan Job Postings" to crawl.</div>';
     return;
   }
 
   container.innerHTML = `
     <h3 style="margin:16px 0 12px;">Recent Postings</h3>
-    <table class="data-table">
+    <div class="v2-table-card">
+    <table class="v2-table">
       <thead><tr><th>Date</th><th>Entity</th><th>Title</th><th>Department</th><th>Seniority</th><th>Location</th></tr></thead>
       <tbody>${postings.slice(0, 100).map(j => `
         <tr>
-          <td>${j.posted_date}</td>
-          <td>${escHtml(j.entity_name)}</td>
-          <td><a href="${escHtml(j.url)}" target="_blank" rel="noopener">${escHtml(j.title)}</a></td>
-          <td>${escHtml(j.department)}</td>
-          <td><span class="seniority-badge seniority-${j.seniority}">${j.seniority}</span></td>
-          <td>${escHtml(j.location)}</td>
+          <td>${j.posted_date || ''}</td>
+          <td>${escHtml(j.entity_name || '')}</td>
+          <td>${j.url ? `<a href="${escHtml(j.url)}" target="_blank" rel="noopener">${escHtml(j.title || 'Untitled')}</a>` : escHtml(j.title || 'Untitled')}</td>
+          <td>${escHtml(j.department || '')}</td>
+          <td><span class="seniority-badge seniority-${j.seniority || 'unknown'}">${j.seniority || '-'}</span></td>
+          <td>${escHtml(j.location || '')}</td>
         </tr>
       `).join('')}</tbody>
     </table>
+    </div>
   `;
 }
 
@@ -2270,11 +2557,20 @@ async function loadFinraAlerts() {
 function renderFinraAlerts(alerts) {
   const el = document.getElementById('finraAlertsList');
   if (!alerts || alerts.length === 0) {
-    el.innerHTML = '<div class="empty">No FINRA alerts found. Click "Scan FINRA" to check.</div>';
+    el.innerHTML = '<div class="v2-empty">No FINRA alerts found. Click "Scan FINRA" to check.</div>';
     return;
   }
 
-  el.innerHTML = alerts.slice(0, 50).map(a => `
+  // KPI strip
+  const critical = alerts.filter(a => a.severity === 'critical').length;
+  const high = alerts.filter(a => a.severity === 'high').length;
+  const medium = alerts.filter(a => a.severity === 'medium' || a.severity === 'low').length;
+  el.innerHTML = `<div class="v2-kpi-strip">
+    <div class="kpi-card"><div class="kpi-value">${alerts.length}</div><div class="kpi-label">Total Alerts</div></div>
+    <div class="kpi-card"><div class="kpi-value" style="color:var(--negative)">${critical}</div><div class="kpi-label">Critical</div></div>
+    <div class="kpi-card"><div class="kpi-value" style="color:var(--gold)">${high}</div><div class="kpi-label">High</div></div>
+    <div class="kpi-card"><div class="kpi-value" style="color:var(--text-muted)">${medium}</div><div class="kpi-label">Medium/Low</div></div>
+  </div>` + alerts.slice(0, 50).map(a => `
     <div class="finra-alert finra-${a.severity}">
       <div class="finra-alert-header">
         <span class="finra-badge badge-${a.severity}">${a.severity.toUpperCase()}</span>

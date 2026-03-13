@@ -23,23 +23,29 @@
   </header>
 
   <nav class="tabs">
-    <button class="tab active" data-tab="brief" onclick="switchTab('brief')">Daily Brief</button>
-    <button class="tab" data-tab="news" onclick="switchTab('news')">Competitor News</button>
-    <button class="tab" data-tab="fin-news" onclick="switchTab('fin-news')">Financial News</button>
-    <button class="tab" data-tab="stats" onclick="switchTab('stats')">Competitor Intelligence</button>
-    <button class="tab" data-tab="market" onclick="switchTab('market')">Market Indicators</button>
-    <button class="tab" data-tab="aum" onclick="switchTab('aum')">AUM</button>
-    <button class="tab" data-tab="holdings" onclick="switchTab('holdings')">13F Holdings</button>
-    <button class="tab" data-tab="sec" onclick="switchTab('sec')">Regulatory</button>
-    <button class="tab" data-tab="adv" onclick="switchTab('adv')">Form ADV</button>
-    <button class="tab" data-tab="trends" onclick="switchTab('trends')">Trends</button>
-    <button class="tab" data-tab="personnel" onclick="switchTab('personnel')">Personnel</button>
-    <button class="tab" data-tab="mandates" onclick="switchTab('mandates')">Mandates</button>
-    <button class="tab" data-tab="jobs" onclick="switchTab('jobs')">Jobs</button>
-    <button class="tab" data-tab="predictions" onclick="switchTab('predictions')">Predictions</button>
-    <button class="tab" data-tab="calendar" onclick="switchTab('calendar')">Gov Calendar</button>
-    <button class="tab" data-tab="export" onclick="switchTab('export')">Export</button>
-    <button class="tab" data-tab="log" onclick="switchTab('log')">Crawl Log</button>
+    <div class="tab-row">
+      <span class="tab-row-label">Overview</span>
+      <button class="tab active" data-tab="brief" onclick="switchTab('brief')">Daily Brief</button>
+      <button class="tab" data-tab="news" onclick="switchTab('news')">Competitor News</button>
+      <button class="tab" data-tab="fin-news" onclick="switchTab('fin-news')">Financial News</button>
+      <button class="tab" data-tab="stats" onclick="switchTab('stats')">Intelligence</button>
+      <button class="tab" data-tab="market" onclick="switchTab('market')">Market Indicators</button>
+      <button class="tab" data-tab="predictions" onclick="switchTab('predictions')">Predictions</button>
+      <button class="tab" data-tab="calendar" onclick="switchTab('calendar')">Gov Calendar</button>
+      <button class="tab" data-tab="export" onclick="switchTab('export')">Export</button>
+    </div>
+    <div class="tab-row">
+      <span class="tab-row-label">Deep Dive</span>
+      <button class="tab" data-tab="aum" onclick="switchTab('aum')">AUM</button>
+      <button class="tab" data-tab="holdings" onclick="switchTab('holdings')">13F Holdings</button>
+      <button class="tab" data-tab="sec" onclick="switchTab('sec')">Regulatory</button>
+      <button class="tab" data-tab="adv" onclick="switchTab('adv')">Form ADV</button>
+      <button class="tab" data-tab="trends" onclick="switchTab('trends')">Trends</button>
+      <button class="tab" data-tab="personnel" onclick="switchTab('personnel')">Personnel</button>
+
+      <button class="tab" data-tab="jobs" onclick="switchTab('jobs')">Jobs</button>
+      <button class="tab" data-tab="log" onclick="switchTab('log')">Crawl Log</button>
+    </div>
   </nav>
 
   <!-- ── Competitor News Tab ───────────────────── -->
@@ -51,7 +57,7 @@
       </div>
       <div id="priorityArticles" class="priority-articles"></div>
     </div>
-    <div class="filters">
+    <div class="filters v2-filter-bar">
       <div class="filter-group">
         <label>Company</label>
         <select id="filterEntity" onchange="loadArticles()">
@@ -106,7 +112,7 @@
         <button id="btnCrawlFinNews" class="btn btn-primary" onclick="triggerFinNewsCrawl()">Crawl Financial News</button>
       </div>
     </div>
-    <div class="filters">
+    <div class="filters v2-filter-bar">
       <div class="filter-group">
         <label>Source</label>
         <select id="filterFinSource" onchange="loadFinArticles()">
@@ -180,7 +186,7 @@
 
   <!-- ── Government Calendar Tab ───────────────── -->
   <section id="tab-calendar" class="tab-content">
-    <div class="filters">
+    <div class="filters v2-filter-bar">
       <div class="filter-group">
         <label>Category</label>
         <select id="filterEventCat" onchange="loadEvents()">
@@ -214,6 +220,7 @@
         <button class="btn btn-primary" onclick="triggerMarketCrawl()">Refresh Data</button>
       </div>
     </div>
+    <div id="marketKpiStrip" class="v2-kpi-strip"></div>
     <div id="fearGreedSection" class="fear-greed-section"></div>
     <div id="fredCardsGrid" class="fred-cards-grid"></div>
     <div id="sentimentSection" class="sentiment-section"></div>
@@ -265,14 +272,12 @@
     <div class="tab-title-bar">
       <h2>13F Holdings Analysis</h2>
       <div class="tab-actions">
-        <select id="holdingsEntity" onchange="loadHoldings()"></select>
-        <select id="holdingsPeriod" onchange="loadHoldings()"></select>
         <button class="btn btn-primary" onclick="trigger13FCrawl()">Crawl 13F Filings</button>
       </div>
     </div>
-    <div id="holdingsSummary" class="holdings-summary"></div>
-    <div id="holdingsTable" class="holdings-table-wrap">
-      <div class="empty">Select an entity and click "Crawl 13F Filings" to load holdings data from SEC EDGAR.</div>
+    <div id="holdingsKpi" class="v2-kpi-strip"></div>
+    <div id="holdingsGrid" class="holdings-grid">
+      <div class="loading">Loading 13F entities — can take up to 20 seconds...</div>
     </div>
   </section>
 
@@ -286,7 +291,7 @@
         <button id="btnSecEnrich" class="btn btn-secondary" onclick="enrichSecKeywords()">Enrich Keywords</button>
       </div>
     </div>
-    <div class="filters">
+    <div class="filters v2-filter-bar">
       <div class="filter-group">
         <label>Entity</label>
         <select id="filterSecEntity" onchange="loadSecFilings()">
@@ -332,7 +337,7 @@
         <button id="btnPredCrawl" class="btn btn-primary" onclick="triggerPredictionsCrawl()">Refresh Predictions</button>
       </div>
     </div>
-    <div class="filters">
+    <div class="filters v2-filter-bar">
       <div class="filter-group">
         <label>Category</label>
         <select id="filterPredCat" onchange="loadPredictions()">
@@ -357,13 +362,13 @@
   <!-- ── Form ADV Analysis Tab ────────────────── -->
   <section id="tab-adv" class="tab-content">
     <div class="tab-title-bar">
-      <h2>Form ADV Deep Analysis</h2>
+      <h2>Form ADV — Registered Investment Advisers</h2>
       <div class="tab-actions">
-        <button id="btnAdvCrawl" class="btn btn-primary" onclick="triggerAdvCrawl()">Analyze ADV Filings</button>
+        <button id="btnAdvCrawl" class="btn btn-primary" onclick="triggerAdvCrawl()">Scan IAPD</button>
       </div>
     </div>
     <div id="advGrid" class="adv-grid">
-      <div class="empty">Click "Analyze ADV Filings" to parse Form ADV data from SEC EDGAR.</div>
+      <div class="empty">Click "Scan IAPD" to fetch Form ADV registration data from SEC.</div>
     </div>
   </section>
 
@@ -373,6 +378,7 @@
       <h2>Historical Trends</h2>
       <div class="tab-actions">
         <select id="trendMetric" onchange="loadTrends()">
+          <option value="">All Metrics</option>
           <option value="aum">AUM</option>
           <option value="sentiment">Sentiment</option>
           <option value="article_count">Article Count</option>
@@ -397,7 +403,7 @@
         <button id="btnPersonnelCrawl" class="btn btn-primary" onclick="triggerPersonnelCrawl()">Scan for Changes</button>
       </div>
     </div>
-    <div class="filters">
+    <div class="filters v2-filter-bar">
       <div class="filter-group">
         <label>Type</label>
         <select id="filterPersonnelType" onchange="loadPersonnel()">
@@ -414,51 +420,6 @@
     </div>
   </section>
 
-  <!-- ── Mandates Tab ───────────────────────────── -->
-  <section id="tab-mandates" class="tab-content">
-    <div class="tab-title-bar">
-      <h2>RFP / Mandate Tracking</h2>
-      <div class="tab-actions">
-        <button class="btn btn-secondary" onclick="toggleMandateForm()">+ Add Event</button>
-      </div>
-    </div>
-    <div id="mandateForm" class="mandate-form" style="display:none;">
-      <div class="form-row">
-        <select id="mandateEntity">
-          <option value="">Select Entity...</option>
-        </select>
-        <input type="text" id="mandateClient" placeholder="Client name">
-        <select id="mandateClientType">
-          <option value="">Client type...</option>
-          <option value="pension">Pension</option>
-          <option value="endowment">Endowment</option>
-          <option value="foundation">Foundation</option>
-          <option value="sovereign">Sovereign Wealth</option>
-          <option value="corporate">Corporate</option>
-          <option value="insurance">Insurance</option>
-          <option value="other">Other</option>
-        </select>
-      </div>
-      <div class="form-row">
-        <select id="mandateEventType">
-          <option value="win">Win</option>
-          <option value="loss">Loss</option>
-          <option value="rfp">RFP</option>
-          <option value="finalist">Finalist</option>
-        </select>
-        <input type="number" id="mandateSize" placeholder="Size ($B)" step="0.1">
-        <input type="text" id="mandateAssetClass" placeholder="Asset class">
-      </div>
-      <div class="form-row">
-        <input type="text" id="mandateSource" placeholder="Source URL">
-        <input type="text" id="mandateNotes" placeholder="Notes">
-        <button class="btn btn-primary" onclick="addMandateEvent()">Save</button>
-      </div>
-    </div>
-    <div id="mandatesList" class="mandates-list">
-      <div class="empty">Track RFP wins, losses, and mandate events across competitors.</div>
-    </div>
-  </section>
 
   <!-- ── Jobs Tab ───────────────────────────────── -->
   <section id="tab-jobs" class="tab-content">
@@ -514,13 +475,6 @@
         <p>Key leadership and personnel changes at competitors.</p>
         <div class="export-actions">
           <button class="btn btn-primary" onclick="downloadExport('personnel', 'csv')">CSV</button>
-        </div>
-      </div>
-      <div class="export-card">
-        <h3>Mandate Events</h3>
-        <p>RFP wins, losses, and mandate tracking data.</p>
-        <div class="export-actions">
-          <button class="btn btn-primary" onclick="downloadExport('mandates', 'csv')">CSV</button>
         </div>
       </div>
       <div class="export-card">

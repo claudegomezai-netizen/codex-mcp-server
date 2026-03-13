@@ -190,6 +190,51 @@ export interface DailyBrief {
     theme: string;
     count: number;
   }>;
+  // Extended fields (v2 brief)
+  personnel_moves?: Array<{
+    person_name: string;
+    entity_name: string;
+    change_type: string;
+    old_role?: string;
+    new_role?: string;
+    date: string;
+  }>;
+  finra_alerts?: Array<{
+    firm_name: string;
+    action_type: string;
+    severity: string;
+    summary: string;
+    date: string;
+  }>;
+  mandate_summary?: {
+    wins: number;
+    losses: number;
+    rfps: number;
+    recent: Array<{
+      entity_name: string;
+      client_name: string;
+      event_type: string;
+      mandate_size_billions?: number;
+      date: string;
+    }>;
+  };
+  hiring_signals?: Array<{
+    entity_name: string;
+    total_postings: number;
+    top_departments: string[];
+  }>;
+  market_indicators?: {
+    fear_greed_score: number | null;
+    fear_greed_rating: string | null;
+    yield_spread: number | null;
+    vix: number | null;
+    fed_funds: number | null;
+    sparklines: Array<{
+      label: string;
+      values: number[];
+    }>;
+  };
+  total_aum_billions?: number;
 }
 
 export const SELF: Entity = {
@@ -557,6 +602,8 @@ export interface FredSeries {
   series_id: string;
   label: string;
   unit: string;
+  category?: string;
+  source_url?: string;
   latest_value: number;
   latest_date: string;
   data_points: FredSeriesPoint[];
@@ -673,19 +720,21 @@ export interface FilingSummary {
 export interface FormAdvAnalysis {
   entity_id: string;
   entity_name: string;
-  cik: string;
+  crd: string;
+  sec_number: string;
+  registration_status: string;
   filing_date: string;
-  total_aum: number;
-  discretionary_aum: number;
-  non_discretionary_aum: number;
-  total_accounts: number;
-  employees: number;
-  advisory_employees: number;
-  fee_schedule: Array<{ type: string; range: string; rate: string }>;
-  client_types: Array<{ type: string; count_or_pct: string }>;
-  compensation_methods: string[];
-  disciplinary_disclosures: boolean;
-  other_business_activities: string[];
+  firm_name: string;
+  other_names: string[];
+  office_address: string;
+  has_disclosures: boolean;
+  branches_count: number;
+  notice_states: string[];
+  brochure_name: string;
+  brochure_date: string;
+  brochure_id: number | null;
+  iapd_url: string;
+  pdf_url: string;
   updated_at: string;
 }
 
