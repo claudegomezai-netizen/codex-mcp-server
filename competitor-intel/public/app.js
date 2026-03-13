@@ -1329,7 +1329,7 @@ function renderBrief(brief) {
   html += '<div class="kpi-card brief-clickable" onclick="switchTab(\'market\')"><div class="kpi-label">Yield Spread</div><div class="kpi-value ' + ysCls + '">' + (ys != null ? (ys >= 0 ? '+' : '') + ys.toFixed(2) + '%' : '—') + '</div><div class="kpi-delta kpi-neutral">10Y - 2Y Treasury</div></div>';
   html += '<div class="kpi-card brief-clickable" onclick="switchTab(\'sec\')"><div class="kpi-label">Active Filings</div><div class="kpi-value">' + brief.risk_alerts.length + '</div><div class="kpi-delta">' + (critCount > 0 ? '<span class="kpi-negative">' + critCount + ' critical</span> ' : '') + (warnCount > 0 ? '<span style="color:var(--gold)">' + warnCount + ' warning</span>' : '') + (critCount === 0 && warnCount === 0 ? '<span class="kpi-neutral">No alerts</span>' : '') + '</div></div>';
   html += '<div class="kpi-card brief-clickable" onclick="switchTab(\'personnel\')"><div class="kpi-label">Personnel (7d)</div><div class="kpi-value">' + pMoves.length + '</div><div class="kpi-delta kpi-neutral">' + (pMoves.length > 0 ? pMoves.filter(function(p){return p.change_type==='hire';}).length + ' hires, ' + pMoves.filter(function(p){return p.change_type==='departure';}).length + ' departures' : 'No changes') + '</div></div>';
-  html += '<div class="kpi-card brief-clickable" onclick="switchTab(\'aum\')"><div class="kpi-label">Total AUM Tracked</div><div class="kpi-value">' + (aumB != null ? '$' + aumB.toLocaleString() + 'B' : '—') + '</div><div class="kpi-delta kpi-neutral">Across all entities</div></div>';
+  html += '<div class="kpi-card brief-clickable" onclick="switchTab(\'aum\')"><div class="kpi-label">Total AUM Tracked</div><div class="kpi-value">' + (aumB != null ? '$' + formatBillions(aumB) : '—') + '</div><div class="kpi-delta kpi-neutral">Across all entities</div></div>';
   html += '</div>';
 
   // ── Primary Grid ──
@@ -1531,7 +1531,7 @@ function renderBrief(brief) {
     aumBoard.forEach(function(a) {
       var pct = Math.max((a.aum_billions / maxAum) * 100, 3);
       var isSelf = a.entity_name.toLowerCase().indexOf('dobbs') >= 0 || a.entity_name.toLowerCase().indexOf('graystone') >= 0;
-      html += '<div class="comp-row"><span class="comp-name" style="' + (isSelf ? 'color:#8b5cf6;font-weight:700' : '') + '">' + escHtml(a.entity_name) + '</span><div class="comp-bar-wrap"><div class="comp-bar ' + (isSelf ? 'self' : 'other') + '" style="width:' + pct + '%"></div></div><span class="comp-count">$' + a.aum_billions.toLocaleString() + 'B</span></div>';
+      html += '<div class="comp-row"><span class="comp-name" style="' + (isSelf ? 'color:#8b5cf6;font-weight:700' : '') + '">' + escHtml(a.entity_name) + '</span><div class="comp-bar-wrap"><div class="comp-bar ' + (isSelf ? 'self' : 'other') + '" style="width:' + pct + '%"></div></div><span class="comp-count">$' + formatBillions(a.aum_billions) + '</span></div>';
     });
   } else {
     html += '<div class="empty" style="font-size:12px">No AUM data. Add data in the AUM tab.</div>';
