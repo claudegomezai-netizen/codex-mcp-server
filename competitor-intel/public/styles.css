@@ -1894,7 +1894,6 @@ header {
   transform: translateY(-2px);
 }
 .gauge-card:hover .gauge-card-sources { opacity: 1; }
-.gauge-card:hover .gauge-needle line { filter: drop-shadow(0 0 4px currentColor); }
 .gauge-card svg { display: block; margin: 0 auto 8px; }
 .gauge-card-label {
   font-size: 11px;
@@ -1922,15 +1921,6 @@ header {
 .gauge-arc-fill {
   filter: drop-shadow(0 0 6px currentColor);
 }
-.gauge-needle {
-  transform-origin: center;
-}
-.gauge-needle line {
-  transition: filter 0.3s;
-}
-.gauge-needle circle:first-of-type {
-  filter: drop-shadow(0 0 3px currentColor);
-}
 .gauge-score-counter {
   font-variant-numeric: tabular-nums;
 }
@@ -1944,11 +1934,6 @@ header {
   0% { opacity: 0.7; height: 3px; }
   100% { opacity: 1; height: 3px; box-shadow: 0 0 8px var(--gauge-accent, transparent); }
 }
-@keyframes needleBounce {
-  0%, 100% { transform: rotate(0deg); }
-  50% { transform: rotate(2deg); }
-}
-
 @media (max-width: 1024px) {
   .market-gauge-strip { grid-template-columns: repeat(3, 1fr); }
 }
@@ -1987,7 +1972,6 @@ header {
 }
 .fg-gauge { flex-shrink: 0; }
 .fg-arc { transition: stroke-dashoffset 1.8s cubic-bezier(0.22, 1, 0.36, 1) !important; }
-.fg-needle { transition: transform 2s cubic-bezier(0.34, 1.56, 0.64, 1) !important; }
 .fg-rating-text { opacity: 0; transition: opacity 0.5s ease; }
 .fg-meta h3 { margin: 0 0 8px 0; font-size: 16px; color: var(--text); }
 .fg-comparisons {
