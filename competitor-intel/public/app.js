@@ -1346,7 +1346,19 @@ function renderBrief(brief) {
   var dOff = arcL * (1 - normalized);
   var gHue = Math.round(normalized * 120);
   var gColor = 'hsl(' + gHue + ', 70%, 50%)';
-  html += '<div style="text-align:center"><svg width="140" height="80" viewBox="0 0 140 80"><path d="M 10 72 A ' + arcR + ' ' + arcR + ' 0 0 1 130 72" fill="none" stroke="var(--border)" stroke-width="8" stroke-linecap="round"/><path id="gaugeFill" d="M 10 72 A ' + arcR + ' ' + arcR + ' 0 0 1 130 72" fill="none" stroke="' + gColor + '" stroke-width="8" stroke-linecap="round" stroke-dasharray="' + arcL + '" stroke-dashoffset="' + arcL + '" style="filter:drop-shadow(0 0 4px ' + gColor + ');transition:stroke-dashoffset 1s"/><text x="70" y="62" text-anchor="middle" fill="var(--text)" font-size="18" font-weight="800">' + gaugeScore.toFixed(2) + '</text><text x="70" y="76" text-anchor="middle" fill="var(--text-muted)" font-size="9">' + s.total_articles + ' articles</text></svg></div>';
+  var mpNeedleAngle = 180 - normalized * 180;
+  var mpNeedleLen = arcR * 0.75;
+  // Brief Market Pulse tick marks
+  var mpTicks = '';
+  for (var mpT = 0; mpT <= 100; mpT += 25) {
+    var mpTa = Math.PI - (mpT / 100) * Math.PI;
+    var mpTx1 = 70 + (arcR + 3) * Math.cos(mpTa);
+    var mpTy1 = 72 - (arcR + 3) * Math.sin(mpTa);
+    var mpTx2 = 70 + (arcR + 7) * Math.cos(mpTa);
+    var mpTy2 = 72 - (arcR + 7) * Math.sin(mpTa);
+    mpTicks += '<line x1="' + mpTx1.toFixed(1) + '" y1="' + mpTy1.toFixed(1) + '" x2="' + mpTx2.toFixed(1) + '" y2="' + mpTy2.toFixed(1) + '" stroke="var(--text-muted)" stroke-width="1.5" opacity="0.35"/>';
+  }
+  html += '<div style="text-align:center"><svg width="160" height="90" viewBox="0 0 160 90"><defs><filter id="mpGlow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>' + mpTicks + '<path d="M 18 78 A ' + arcR + ' ' + arcR + ' 0 0 1 142 78" fill="none" stroke="var(--border)" stroke-width="7" stroke-linecap="round" opacity="0.4"/><path id="gaugeFill" d="M 18 78 A ' + arcR + ' ' + arcR + ' 0 0 1 142 78" fill="none" stroke="' + gColor + '" stroke-width="7" stroke-linecap="round" stroke-dasharray="' + arcL + '" stroke-dashoffset="' + arcL + '" filter="url(#mpGlow)" style="transition:stroke-dashoffset 1.4s cubic-bezier(0.22, 1, 0.36, 1)"/><g class="brief-needle" style="transform:rotate(180deg);transform-origin:80px 78px;transition:transform 1.6s cubic-bezier(0.34, 1.56, 0.64, 1)" data-target-angle="' + mpNeedleAngle + '"><line x1="80" y1="78" x2="' + (80 - mpNeedleLen) + '" y2="78" stroke="' + gColor + '" stroke-width="2" stroke-linecap="round"/><circle cx="80" cy="78" r="3.5" fill="' + gColor + '"/><circle cx="80" cy="78" r="1.5" fill="var(--bg, #0f0f0f)"/></g><text x="80" y="70" text-anchor="middle" fill="var(--text)" font-size="18" font-weight="800">' + gaugeScore.toFixed(2) + '</text><text x="80" y="86" text-anchor="middle" fill="var(--text-muted)" font-size="9">' + s.total_articles + ' articles</text></svg></div>';
   html += '<div class="sentiment-stack"><div class="seg-pos" style="width:' + s.positive_pct + '%"></div><div class="seg-neu" style="width:' + s.neutral_pct + '%"></div><div class="seg-neg" style="width:' + s.negative_pct + '%"></div></div>';
   html += '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);margin-top:3px"><span style="color:var(--positive)">' + s.positive_pct + '% pos</span><span>' + s.neutral_pct + '% neu</span><span style="color:var(--negative)">' + s.negative_pct + '% neg</span></div>';
 
@@ -1527,14 +1539,20 @@ function renderBrief(brief) {
 
   container.innerHTML = html;
 
-  // Animate gauges (Market Pulse + KPI mini gauge)
+  // Animate gauges (Market Pulse + KPI mini gauge + needle)
   setTimeout(function() {
     var fill = document.getElementById('gaugeFill');
     if (fill) fill.setAttribute('stroke-dashoffset', String(dOff));
     document.querySelectorAll('.kpi-gauge-fill').forEach(function(el) {
       el.setAttribute('stroke-dashoffset', el.getAttribute('data-target'));
     });
-  }, 50);
+    // Animate Brief Market Pulse needle
+    var briefNeedle = document.querySelector('.brief-needle');
+    if (briefNeedle) {
+      var bNa = briefNeedle.getAttribute('data-target-angle');
+      briefNeedle.style.transform = 'rotate(' + bNa + 'deg)';
+    }
+  }, 100);
 
   // Async-load social buzz into brief card
   loadBriefSocialBuzz();
@@ -1700,6 +1718,67 @@ async function loadMarketIndicators() {
   }
 }
 
+// ── Gauge Animation Engine ──
+function animateAllGauges(container, baseDelay) {
+  var delay = baseDelay || 200;
+  var svgs = container.querySelectorAll('.gauge-svg-animated');
+  svgs.forEach(function(svg, idx) {
+    var card = svg.closest('[data-gauge-delay]');
+    var cardDelay = card ? parseInt(card.getAttribute('data-gauge-delay')) : (delay + idx * 120);
+
+    // 1. Animate arc fill with spring easing
+    var arcFill = svg.querySelector('.gauge-arc-fill');
+    if (arcFill) {
+      setTimeout(function() {
+        arcFill.style.transition = 'stroke-dashoffset 1.4s cubic-bezier(0.22, 1.0, 0.36, 1)';
+        arcFill.setAttribute('stroke-dashoffset', arcFill.getAttribute('data-target'));
+      }, cardDelay);
+    }
+
+    // 2. Animate needle sweep
+    var needle = svg.querySelector('.gauge-needle');
+    if (needle) {
+      setTimeout(function() {
+        var targetAngle = parseFloat(needle.getAttribute('data-target-angle'));
+        var cx = needle.getAttribute('data-cx');
+        var cy = needle.getAttribute('data-cy');
+        needle.style.transition = 'transform 1.6s cubic-bezier(0.34, 1.56, 0.64, 1)';
+        needle.style.transformOrigin = cx + 'px ' + cy + 'px';
+        needle.setAttribute('transform', 'rotate(' + targetAngle + ',' + cx + ',' + cy + ')');
+      }, cardDelay + 100);
+    }
+
+    // 3. Count-up the score number
+    var counter = svg.querySelector('.gauge-score-counter');
+    if (counter) {
+      var target = parseInt(counter.getAttribute('data-target'));
+      var startTime = null;
+      var duration = 1200;
+      setTimeout(function() {
+        requestAnimationFrame(function step(ts) {
+          if (!startTime) startTime = ts;
+          var progress = Math.min((ts - startTime) / duration, 1);
+          // Ease out cubic
+          var eased = 1 - Math.pow(1 - progress, 3);
+          var current = Math.round(eased * target);
+          counter.textContent = current;
+          if (progress < 1) requestAnimationFrame(step);
+        });
+      }, cardDelay + 200);
+    }
+
+    // 4. Reveal rating text (Fear & Greed only)
+    var ratingText = svg.querySelector('.fg-rating-text');
+    if (ratingText) {
+      setTimeout(function() {
+        ratingText.textContent = ratingText.getAttribute('data-rating');
+        ratingText.style.transition = 'opacity 0.5s';
+        ratingText.style.opacity = '1';
+      }, cardDelay + 1200);
+    }
+  });
+}
+
 function renderMarketIndicators(mkt, sent) {
   // ── Composite Gauge Dashboard ──
   var gaugeEl = document.getElementById('marketGaugeStrip');
@@ -1842,13 +1921,33 @@ function renderMarketIndicators(mkt, sent) {
     function renderArcGauge(score, color, size) {
       var r = size * 0.38;
       var arcLen = Math.PI * r;
-      var dashOn = (score / 100) * arcLen;
-      var cx = size / 2, cy = size * 0.52;
+      var cx = size / 2, cy = size * 0.55;
       var x1 = cx - r, x2 = cx + r;
-      return '<svg viewBox="0 0 ' + size + ' ' + Math.round(size * 0.65) + '" width="' + size + '" height="' + Math.round(size * 0.65) + '">' +
-        '<path d="M ' + x1 + ' ' + cy + ' A ' + r + ' ' + r + ' 0 0 1 ' + x2 + ' ' + cy + '" fill="none" stroke="var(--border)" stroke-width="8" stroke-linecap="round"/>' +
-        '<path d="M ' + x1 + ' ' + cy + ' A ' + r + ' ' + r + ' 0 0 1 ' + x2 + ' ' + cy + '" fill="none" stroke="' + color + '" stroke-width="8" stroke-linecap="round" stroke-dasharray="' + dashOn.toFixed(1) + ' ' + arcLen.toFixed(1) + '"/>' +
-        '<text x="' + cx + '" y="' + (cy - 4) + '" text-anchor="middle" fill="' + color + '" font-size="18" font-weight="700">' + score + '</text>' +
+      var h = Math.round(size * 0.7);
+      // Needle angle: 0% = 180deg (left), 100% = 0deg (right)
+      var needleAngle = 180 - (score / 100) * 180;
+      var needleLen = r * 0.78;
+      // Tick marks (every 20%)
+      var ticks = '';
+      for (var t = 0; t <= 100; t += 20) {
+        var tAngle = (Math.PI - (t / 100) * Math.PI);
+        var tx1 = cx + (r + 4) * Math.cos(tAngle);
+        var ty1 = cy - (r + 4) * Math.sin(tAngle);
+        var tx2 = cx + (r + 9) * Math.cos(tAngle);
+        var ty2 = cy - (r + 9) * Math.sin(tAngle);
+        ticks += '<line x1="' + tx1.toFixed(1) + '" y1="' + ty1.toFixed(1) + '" x2="' + tx2.toFixed(1) + '" y2="' + ty2.toFixed(1) + '" stroke="var(--text-muted)" stroke-width="1.5" opacity="0.4"/>';
+      }
+      return '<svg class="gauge-svg-animated" viewBox="0 0 ' + size + ' ' + h + '" width="' + size + '" height="' + h + '" data-score="' + score + '">' +
+        '<defs><filter id="glow' + score + '"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>' +
+        ticks +
+        '<path d="M ' + x1 + ' ' + cy + ' A ' + r + ' ' + r + ' 0 0 1 ' + x2 + ' ' + cy + '" fill="none" stroke="var(--border)" stroke-width="7" stroke-linecap="round" opacity="0.5"/>' +
+        '<path class="gauge-arc-fill" d="M ' + x1 + ' ' + cy + ' A ' + r + ' ' + r + ' 0 0 1 ' + x2 + ' ' + cy + '" fill="none" stroke="' + color + '" stroke-width="7" stroke-linecap="round" stroke-dasharray="' + arcLen.toFixed(1) + '" stroke-dashoffset="' + arcLen.toFixed(1) + '" data-target="' + (arcLen - (score / 100) * arcLen).toFixed(1) + '" filter="url(#glow' + score + ')"/>' +
+        '<g class="gauge-needle" transform="rotate(' + 180 + ',' + cx + ',' + cy + ')" data-target-angle="' + needleAngle + '" data-cx="' + cx + '" data-cy="' + cy + '">' +
+        '<line x1="' + cx + '" y1="' + cy + '" x2="' + (cx - needleLen) + '" y2="' + cy + '" stroke="' + color + '" stroke-width="2.5" stroke-linecap="round"/>' +
+        '<circle cx="' + cx + '" cy="' + cy + '" r="4" fill="' + color + '"/>' +
+        '<circle cx="' + cx + '" cy="' + cy + '" r="2" fill="var(--bg, #0f0f0f)"/>' +
+        '</g>' +
+        '<text class="gauge-score-counter" x="' + cx + '" y="' + (cy - 6) + '" text-anchor="middle" fill="' + color + '" font-size="18" font-weight="800" data-target="' + score + '">0</text>' +
         '</svg>';
     }
 
@@ -1856,32 +1955,68 @@ function renderMarketIndicators(mkt, sent) {
     gauges.forEach(function(g, idx) {
       var c = gaugeColor(g.score);
       var srcText = (g.sources || []).join(' · ');
-      gHtml += '<a class="gauge-card" href="' + escHtml(g.url || '#') + '" target="_blank" rel="noopener" style="--gauge-accent:' + c + ';animation-delay:' + (idx * 0.06) + 's;">';
-      gHtml += renderArcGauge(g.score, c, 120);
+      gHtml += '<a class="gauge-card" href="' + escHtml(g.url || '#') + '" target="_blank" rel="noopener" style="--gauge-accent:' + c + ';animation-delay:' + (idx * 0.08) + 's;" data-gauge-delay="' + (idx * 120 + 300) + '">';
+      gHtml += renderArcGauge(g.score, c, 130);
       gHtml += '<div class="gauge-card-label">' + g.icon + ' ' + escHtml(g.label) + '</div>';
       gHtml += '<div class="gauge-card-sub">' + escHtml(g.sub) + '</div>';
       gHtml += '<div class="gauge-card-sources">' + escHtml(srcText) + ' ↗</div>';
       gHtml += '</a>';
     });
     gaugeEl.innerHTML = gHtml;
+    // Animate all 9 gauges with staggered timing
+    animateAllGauges(gaugeEl);
   } else if (gaugeEl) {
     gaugeEl.innerHTML = '';
   }
 
-  // Fear & Greed gauge
+  // Fear & Greed gauge — animated
   const fgEl = document.getElementById('fearGreedSection');
   if (mkt.fear_greed) {
     const fg = mkt.fear_greed;
     const color = fg.score <= 25 ? '#ef4444' : fg.score <= 45 ? '#f97316' : fg.score <= 55 ? '#eab308' : fg.score <= 75 ? '#22c55e' : '#16a34a';
+    const fgArcLen = 251.2;
+    const fgNeedleAngle = 180 - (fg.score / 100) * 180;
+    const fgNeedleLen = 62;
+    // Build tick marks for FG gauge
+    var fgTicks = '';
+    for (var ft = 0; ft <= 100; ft += 10) {
+      var ftAngle = (Math.PI - (ft / 100) * Math.PI);
+      var ftx1 = 100 + 85 * Math.cos(ftAngle);
+      var fty1 = 100 - 85 * Math.sin(ftAngle);
+      var ftx2 = 100 + (ft % 20 === 0 ? 93 : 89) * Math.cos(ftAngle);
+      var fty2 = 100 - (ft % 20 === 0 ? 93 : 89) * Math.sin(ftAngle);
+      fgTicks += '<line x1="' + ftx1.toFixed(1) + '" y1="' + fty1.toFixed(1) + '" x2="' + ftx2.toFixed(1) + '" y2="' + fty2.toFixed(1) + '" stroke="var(--text-muted)" stroke-width="' + (ft % 20 === 0 ? '2' : '1') + '" opacity="0.35"/>';
+    }
+    // Zone labels
+    var fgZoneLabels = '<text x="30" y="106" text-anchor="middle" fill="var(--text-muted)" font-size="7" opacity="0.5">FEAR</text>' +
+      '<text x="100" y="46" text-anchor="middle" fill="var(--text-muted)" font-size="7" opacity="0.5">NEUTRAL</text>' +
+      '<text x="170" y="106" text-anchor="middle" fill="var(--text-muted)" font-size="7" opacity="0.5">GREED</text>';
     fgEl.innerHTML = `
       <a class="fg-card" href="https://edition.cnn.com/markets/fear-and-greed" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;">
         <div class="fg-gauge">
-          <svg viewBox="0 0 200 120" width="200" height="120">
-            <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="var(--border)" stroke-width="12" stroke-linecap="round"/>
-            <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="${color}" stroke-width="12" stroke-linecap="round"
-              stroke-dasharray="${(fg.score / 100) * 251.2} 251.2"/>
-            <text x="100" y="85" text-anchor="middle" fill="${color}" font-size="28" font-weight="700">${fg.score}</text>
-            <text x="100" y="105" text-anchor="middle" fill="var(--muted)" font-size="11">${fg.rating}</text>
+          <svg class="gauge-svg-animated" viewBox="0 0 200 120" width="220" height="132" data-score="${fg.score}">
+            <defs>
+              <filter id="fgGlow"><feGaussianBlur stdDeviation="4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+              <linearGradient id="fgGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#ef4444"/>
+                <stop offset="25%" stop-color="#f97316"/>
+                <stop offset="50%" stop-color="#eab308"/>
+                <stop offset="75%" stop-color="#22c55e"/>
+                <stop offset="100%" stop-color="#16a34a"/>
+              </linearGradient>
+            </defs>
+            ${fgTicks}
+            <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="var(--border)" stroke-width="10" stroke-linecap="round" opacity="0.4"/>
+            <path class="gauge-arc-fill fg-arc" d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="url(#fgGrad)" stroke-width="10" stroke-linecap="round"
+              stroke-dasharray="${fgArcLen}" stroke-dashoffset="${fgArcLen}" data-target="${(fgArcLen - (fg.score / 100) * fgArcLen).toFixed(1)}" filter="url(#fgGlow)"/>
+            <g class="gauge-needle fg-needle" transform="rotate(180,100,100)" data-target-angle="${fgNeedleAngle}" data-cx="100" data-cy="100">
+              <line x1="100" y1="100" x2="${100 - fgNeedleLen}" y2="100" stroke="${color}" stroke-width="3" stroke-linecap="round"/>
+              <circle cx="100" cy="100" r="6" fill="${color}"/>
+              <circle cx="100" cy="100" r="3" fill="var(--bg, #0f0f0f)"/>
+            </g>
+            <text class="gauge-score-counter" x="100" y="85" text-anchor="middle" fill="${color}" font-size="28" font-weight="800" data-target="${fg.score}">0</text>
+            <text x="100" y="113" text-anchor="middle" fill="var(--text-muted)" font-size="10" class="fg-rating-text" data-rating="${escHtml(fg.rating)}">&nbsp;</text>
+            ${fgZoneLabels}
           </svg>
         </div>
         <div class="fg-meta">
@@ -1897,6 +2032,8 @@ function renderMarketIndicators(mkt, sent) {
       </a>
       ${mkt.yield_spread !== null ? `<div class="yield-spread-card"><span class="yield-label">Yield Curve Spread (10Y-2Y)</span><span class="yield-value ${mkt.yield_spread < 0 ? 'inverted' : ''}">${mkt.yield_spread > 0 ? '+' : ''}${mkt.yield_spread}%</span></div>` : ''}
     `;
+    // Animate Fear & Greed gauge
+    animateAllGauges(fgEl, 400);
   } else {
     fgEl.innerHTML = '<div class="empty">No Fear &amp; Greed data yet. Click "Refresh Data" to fetch.</div>';
   }
