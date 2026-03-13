@@ -495,6 +495,15 @@ async function loadPriorityArticles() {
       return;
     }
 
+    // Dedup by title (same article can appear under multiple entities)
+    var seen = {};
+    articles = articles.filter(function(a) {
+      var key = a.title.toLowerCase().trim();
+      if (seen[key]) return false;
+      seen[key] = true;
+      return true;
+    });
+
     section.style.display = 'block';
     countEl.textContent = articles.length + ' articles';
     var html = '';
