@@ -31,7 +31,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Auth check — redirect to login if no token
   if (!getAuthToken()) { window.location.href = '/login.html'; return; }
   await loadEntities();
-  loadBrief(); // Daily Brief is now the default tab
+  // Restore last active tab, or default to Daily Brief
+  var savedTab = null;
+  try { savedTab = localStorage.getItem('ci_active_tab'); } catch(e) {}
+  if (savedTab && document.querySelector('[data-tab="' + savedTab + '"]')) {
+    switchTab(savedTab);
+  } else {
+    loadBrief(); // Daily Brief is the default tab
+  }
 
   // Default calendar date range: today - 7 days to today + 90 days
   const now = new Date();
@@ -413,6 +420,9 @@ function switchTab(tabName) {
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
   document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
   document.getElementById(`tab-${tabName}`).classList.add('active');
+
+  // Remember last active tab across page refreshes
+  try { localStorage.setItem('ci_active_tab', tabName); } catch(e) {}
 
   // Lazy load tab data
   if (tabName === 'brief') loadBrief();
