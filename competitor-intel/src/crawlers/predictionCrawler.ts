@@ -44,20 +44,25 @@ export async function crawlPredictionMarkets(): Promise<number> {
           let probability = 0;
           if (market.outcomePrices) {
             try {
-              const prices = JSON.parse(market.outcomePrices);
-              probability = parseFloat(prices[0] || '0') * 100;
+              const prices = typeof market.outcomePrices === 'string'
+                ? JSON.parse(market.outcomePrices)
+                : market.outcomePrices;
+              const raw = parseFloat(Array.isArray(prices) ? prices[0] || '0' : '0') * 100;
+              probability = isNaN(raw) ? 0 : raw;
             } catch {
-              probability = parseFloat(market.outcomePrices[0] || '0') * 100;
+              probability = 0;
             }
           } else if (market.bestBid) {
-            probability = parseFloat(market.bestBid) * 100;
+            const raw = parseFloat(market.bestBid) * 100;
+            probability = isNaN(raw) ? 0 : raw;
           }
 
+          const vol = parseFloat(market.volume || market.volumeNum || '0');
           markets.push({
             id: makeId(),
             question,
             probability: Math.round(probability * 10) / 10,
-            volume: parseFloat(market.volume || market.volumeNum || '0'),
+            volume: isNaN(vol) ? 0 : vol,
             end_date: market.endDate || event.endDate || '',
             source: 'polymarket',
             category: categorizeMarket(question),
@@ -73,16 +78,33 @@ export async function crawlPredictionMarkets(): Promise<number> {
     }
   }
 
-  const newCount = await addPredictionMarkets(markets);
+  let newCount = 0;
+  try {
+    newCount = await addPredictionMarkets(markets);
+  } catch (err: any) {
+    console.error(`[Predictions] Storage error: ${err.message}`);
+    try {
+      await logCrawl({
+        crawl_type: 'predictions', entity_id: null,
+        articles_found: 0, status: 'error',
+        error_message: err.message, finished_at: new Date().toISOString(),
+      });
+    } catch { /* ignore log failure */ }
+    return 0;
+  }
 
-  await logCrawl({
-    crawl_type: 'predictions',
-    entity_id: null,
-    articles_found: newCount,
-    status: 'success',
-    error_message: null,
-    finished_at: new Date().toISOString(),
-  });
+  try {
+    await logCrawl({
+      crawl_type: 'predictions',
+      entity_id: null,
+      articles_found: newCount,
+      status: markets.length > 0 ? 'success' : 'completed',
+      error_message: markets.length === 0 ? 'No markets fetched' : null,
+      finished_at: new Date().toISOString(),
+    });
+  } catch (logErr) {
+    console.warn('[Predictions] logCrawl failed:', logErr);
+  }
 
   console.log(`[${new Date().toISOString()}] Prediction markets crawl complete. ${newCount} new/updated.`);
   return newCount;

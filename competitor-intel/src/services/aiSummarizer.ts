@@ -6,9 +6,9 @@ const USER_AGENT = 'The Dobbs Group Competitor Intel alerts@dobbsgroup.com';
 
 async function fetchDocText(url: string, maxBytes = 60000): Promise<string> {
   if (!url) return '';
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
     const res = await fetch(url, {
       headers: { 'User-Agent': USER_AGENT, 'Range': `bytes=0-${maxBytes}` },
       redirect: 'follow',
@@ -24,6 +24,7 @@ async function fetchDocText(url: string, maxBytes = 60000): Promise<string> {
       .trim()
       .substring(0, 30000);
   } catch {
+    clearTimeout(timer); // Ensure timer is cleared on error paths too
     return '';
   }
 }
@@ -76,11 +77,28 @@ Focus on: regulatory impact, competitive implications for investment consulting,
     });
 
     const text = response.content[0].type === 'text' ? response.content[0].text : '';
-    // Extract JSON from response
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return null;
+    // Extract JSON from response — use lazy match to avoid grabbing trailing text
+    const jsonMatch = text.match(/\{[\s\S]*?\}(?=\s*$|\s*```)/);
+    // Fallback: try a balanced brace match
+    const jsonStr = jsonMatch?.[0] || (() => {
+      const start = text.indexOf('{');
+      if (start === -1) return null;
+      let depth = 0;
+      for (let i = start; i < text.length; i++) {
+        if (text[i] === '{') depth++;
+        else if (text[i] === '}') depth--;
+        if (depth === 0) return text.substring(start, i + 1);
+      }
+      return null;
+    })();
+    if (!jsonStr) return null;
 
-    const parsed = JSON.parse(jsonMatch[0]);
+    const parsed = JSON.parse(jsonStr);
+    if (typeof parsed !== 'object' || parsed === null) return null;
+
+    // Validate and coerce types
+    const ensureStringArray = (v: unknown): string[] =>
+      Array.isArray(v) ? v.filter(s => typeof s === 'string') : [];
 
     const summary: FilingSummary = {
       filing_id: filing.id,
@@ -88,12 +106,12 @@ Focus on: regulatory impact, competitive implications for investment consulting,
       company_name: filing.company_name,
       filing_type: filing.filing_type,
       filed_date: filing.filed_date,
-      summary: parsed.summary || '',
-      impact_companies: parsed.impact_companies || [],
-      impact_stocks: parsed.impact_stocks || [],
-      cost_implications: parsed.cost_implications || '',
-      key_risks: parsed.key_risks || [],
-      action_items: parsed.action_items || [],
+      summary: typeof parsed.summary === 'string' ? parsed.summary : '',
+      impact_companies: ensureStringArray(parsed.impact_companies),
+      impact_stocks: ensureStringArray(parsed.impact_stocks),
+      cost_implications: typeof parsed.cost_implications === 'string' ? parsed.cost_implications : '',
+      key_risks: ensureStringArray(parsed.key_risks),
+      action_items: ensureStringArray(parsed.action_items),
       generated_at: new Date().toISOString(),
     };
 

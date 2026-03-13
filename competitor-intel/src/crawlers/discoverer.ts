@@ -138,14 +138,18 @@ export async function discoverCompetitors(): Promise<DiscoverySuggestion[]> {
   // Rank by filing frequency (most active filers first)
   suggestions.sort((a, b) => b.filing_count - a.filing_count);
 
-  await logCrawl({
-    crawl_type: 'discovery',
-    entity_id: null,
-    articles_found: suggestions.length,
-    status: 'success',
-    error_message: null,
-    finished_at: new Date().toISOString(),
-  });
+  try {
+    await logCrawl({
+      crawl_type: 'discovery',
+      entity_id: null,
+      articles_found: suggestions.length,
+      status: 'success',
+      error_message: null,
+      finished_at: new Date().toISOString(),
+    });
+  } catch (logErr) {
+    console.warn('[DISCOVER] logCrawl failed:', logErr);
+  }
 
   // Return top 20 suggestions
   return suggestions.slice(0, 20);

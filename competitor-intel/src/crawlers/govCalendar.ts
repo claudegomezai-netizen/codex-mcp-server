@@ -33,17 +33,27 @@ const FOMC_DATES = [
   { date: '2026-04-28', end: '2026-04-29' }, { date: '2026-06-16', end: '2026-06-17' },
   { date: '2026-07-28', end: '2026-07-29' }, { date: '2026-09-15', end: '2026-09-16' },
   { date: '2026-11-03', end: '2026-11-04' }, { date: '2026-12-15', end: '2026-12-16' },
+  // 2027 (tentative — update when Fed publishes official schedule)
+  { date: '2027-01-26', end: '2027-01-27' }, { date: '2027-03-16', end: '2027-03-17' },
+  { date: '2027-04-27', end: '2027-04-28' }, { date: '2027-06-15', end: '2027-06-16' },
+  { date: '2027-07-27', end: '2027-07-28' }, { date: '2027-09-21', end: '2027-09-22' },
+  { date: '2027-11-02', end: '2027-11-03' }, { date: '2027-12-14', end: '2027-12-15' },
 ];
 
 function makeId(): string {
   return `gov-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 }
 
-function parseEventDate(item: any): string {
+function parseEventDate(item: any): string | null {
   const raw = item.isoDate || item.dcDate || item.pubDate;
-  if (!raw) return new Date().toISOString().split('T')[0];
-  try { return new Date(raw).toISOString().split('T')[0]; }
-  catch { return new Date().toISOString().split('T')[0]; }
+  if (!raw) return null;
+  try {
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return null;
+    return d.toISOString().split('T')[0];
+  } catch {
+    return null;
+  }
 }
 
 function buildFomcEvents(): GovEvent[] {
@@ -72,17 +82,23 @@ function buildFomcEvents(): GovEvent[] {
 async function crawlFeed(feed: GovFeed): Promise<GovEvent[]> {
   try {
     const parsed = await parser.parseURL(feed.url);
-    return (parsed.items || []).slice(0, 30).map(item => ({
-      id: makeId(),
-      title: (item.title || 'Untitled').replace(/<[^>]*>/g, '').trim(),
-      description: (item.contentSnippet || item.content || '').replace(/<[^>]*>/g, '').substring(0, 500).trim(),
-      event_date: parseEventDate(item),
-      event_time: null,
-      source: feed.name,
-      category: feed.category,
-      link: item.link || '',
-      created_at: new Date().toISOString(),
-    }));
+    return (parsed.items || []).slice(0, 30)
+      .map(item => {
+        const eventDate = parseEventDate(item);
+        if (!eventDate) return null; // Skip items with unparseable dates
+        return {
+          id: makeId(),
+          title: (item.title || 'Untitled').replace(/<[^>]*>/g, '').trim(),
+          description: (item.contentSnippet || item.content || '').replace(/<[^>]*>/g, '').substring(0, 500).trim(),
+          event_date: eventDate,
+          event_time: null,
+          source: feed.name,
+          category: feed.category,
+          link: item.link || '',
+          created_at: new Date().toISOString(),
+        };
+      })
+      .filter((e): e is GovEvent => e !== null);
   } catch (err: any) {
     console.error(`  Error crawling ${feed.name}: ${err.message}`);
     return [];
@@ -102,6 +118,7 @@ export async function crawlGovEvents(): Promise<number> {
     GOV_FEEDS.map(feed => crawlFeed(feed))
   );
 
+  const failedFeeds = feedResults.filter(r => r.status === 'rejected').length;
   const allFeedEvents = feedResults
     .filter((r): r is PromiseFulfilledResult<GovEvent[]> => r.status === 'fulfilled')
     .flatMap(r => r.value);
@@ -109,15 +126,20 @@ export async function crawlGovEvents(): Promise<number> {
   const feedNew = await addGovEvents(allFeedEvents);
   const totalNew = fomcNew + feedNew;
 
-  await logCrawl({
-    crawl_type: 'gov_calendar',
-    entity_id: null,
-    articles_found: totalNew,
-    status: 'success',
-    error_message: null,
-    finished_at: new Date().toISOString(),
-  });
+  const hasErrors = failedFeeds > 0;
+  try {
+    await logCrawl({
+      crawl_type: 'gov_calendar',
+      entity_id: null,
+      articles_found: totalNew,
+      status: hasErrors ? 'completed' : 'success',
+      error_message: hasErrors ? `${failedFeeds}/${GOV_FEEDS.length} feeds failed` : null,
+      finished_at: new Date().toISOString(),
+    });
+  } catch (logErr) {
+    console.warn('[GovCal] logCrawl failed:', logErr);
+  }
 
-  console.log(`[${new Date().toISOString()}] Gov calendar crawl complete. ${totalNew} new events.`);
+  console.log(`[${new Date().toISOString()}] Gov calendar crawl complete. ${totalNew} new events.${hasErrors ? ` (${failedFeeds} feeds failed)` : ''}`);
   return totalNew;
 }

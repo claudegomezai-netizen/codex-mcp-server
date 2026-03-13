@@ -1,6 +1,16 @@
 import { Resend } from 'resend';
 import type { DailyBrief, Article } from '../config/competitors.js';
 
+/** Escape untrusted strings for safe HTML embedding */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function getResend(): Resend | null {
   const key = Netlify.env.get('RESEND_API_KEY');
   if (!key) return null;
@@ -28,8 +38,8 @@ export async function sendDailyDigest(brief: DailyBrief): Promise<{ sent: boolea
   const topStoriesHtml = brief.top_stories.slice(0, 5).map(s => `
     <tr>
       <td style="padding:8px; border-bottom:1px solid #eee;">
-        <a href="${s.link}" style="color:#4a6cf7; font-weight:bold; text-decoration:none;">${s.title}</a>
-        <br><span style="color:#888; font-size:12px;">${s.entity_name} | ${s.sentiment_label} | ${s.reason}</span>
+        <a href="${escapeHtml(s.link || '')}" style="color:#4a6cf7; font-weight:bold; text-decoration:none;">${escapeHtml(s.title || '')}</a>
+        <br><span style="color:#888; font-size:12px;">${escapeHtml(s.entity_name || '')} | ${escapeHtml(s.sentiment_label || '')} | ${escapeHtml(s.reason || '')}</span>
       </td>
     </tr>
   `).join('');
@@ -37,9 +47,9 @@ export async function sendDailyDigest(brief: DailyBrief): Promise<{ sent: boolea
   const riskAlertsHtml = brief.risk_alerts.slice(0, 5).map(r => `
     <tr>
       <td style="padding:8px; border-bottom:1px solid #eee;">
-        <span style="color:${r.risk_level === 'critical' ? '#ef4444' : '#f59e0b'}; font-weight:bold;">[${r.risk_level.toUpperCase()}]</span>
-        ${r.company_name} — ${r.filing_type}
-        <br><span style="font-size:12px; color:#666;">${r.description}</span>
+        <span style="color:${r.risk_level === 'critical' ? '#ef4444' : '#f59e0b'}; font-weight:bold;">[${escapeHtml((r.risk_level || '').toUpperCase())}]</span>
+        ${escapeHtml(r.company_name || '')} — ${escapeHtml(r.filing_type || '')}
+        <br><span style="font-size:12px; color:#666;">${escapeHtml(r.description || '')}</span>
       </td>
     </tr>
   `).join('');
@@ -47,7 +57,7 @@ export async function sendDailyDigest(brief: DailyBrief): Promise<{ sent: boolea
   const eventsHtml = brief.upcoming_events.slice(0, 5).map(e => `
     <tr>
       <td style="padding:6px 8px; border-bottom:1px solid #eee; font-size:13px;">
-        <strong>${e.event_date}</strong> — ${e.title} <span style="color:#888;">(${e.category})</span>
+        <strong>${escapeHtml(e.event_date || '')}</strong> — ${escapeHtml(e.title || '')} <span style="color:#888;">(${escapeHtml(e.category || '')})</span>
       </td>
     </tr>
   `).join('');
@@ -103,8 +113,8 @@ export async function sendDailyDigest(brief: DailyBrief): Promise<{ sent: boolea
             ${brief.competitor_activity.slice(0, 8).map(c => `
               <tr>
                 <td style="padding:4px 8px; font-size:13px; border-bottom:1px solid #f0f0f0;">
-                  <strong>${c.entity_name}</strong> — ${c.article_count} articles
-                  <br><a href="${c.top_link}" style="color:#4a6cf7; font-size:12px; text-decoration:none;">${c.top_headline}</a>
+                  <strong>${escapeHtml(c.entity_name || '')}</strong> — ${c.article_count} articles
+                  <br><a href="${escapeHtml(c.top_link || '')}" style="color:#4a6cf7; font-size:12px; text-decoration:none;">${escapeHtml(c.top_headline || '')}</a>
                 </td>
               </tr>
             `).join('')}
@@ -122,16 +132,20 @@ export async function sendDailyDigest(brief: DailyBrief): Promise<{ sent: boolea
   `;
 
   try {
+    const recipients = to.split(',').map(e => e.trim()).filter(Boolean);
+    if (recipients.length === 0) return { sent: false, error: 'No valid recipients after parsing ALERT_EMAIL_TO' };
+
     await resend.emails.send({
       from,
-      to: to.split(',').map(e => e.trim()),
+      to: recipients,
       subject: `${sentimentEmoji} Daily Brief: ${brief.market_sentiment.trend} | ${brief.top_stories.length} stories | ${brief.risk_alerts.length} alerts`,
       html,
     });
     return { sent: true };
-  } catch (err: any) {
-    console.error(`[EMAIL] Failed: ${err.message}`);
-    return { sent: false, error: err.message };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[EMAIL] Failed: ${msg}`);
+    return { sent: false, error: msg };
   }
 }
 
@@ -140,20 +154,26 @@ export async function sendAlertEmail(articles: Article[]): Promise<{ sent: boole
   const { to, from } = getEmailConfig();
   if (!resend || !to) return { sent: false, error: 'Email not configured' };
 
-  const rows = articles.map(a => `
+  const rows = articles.map(a => {
+    const pubDate = (() => { try { return new Date(a.pub_date).toLocaleDateString(); } catch { return 'N/A'; } })();
+    return `
     <tr>
       <td style="padding:8px; border-bottom:1px solid #eee;">
-        <a href="${a.link}" style="color:#ef4444; font-weight:bold; text-decoration:none;">${a.title}</a>
-        <br><span style="color:#888; font-size:12px;">${a.entity_name} | ${a.source} | ${new Date(a.pub_date).toLocaleDateString()}</span>
-        <br><span style="font-size:13px; color:#333;">${(a.snippet || '').substring(0, 200)}</span>
+        <a href="${escapeHtml(a.link || '')}" style="color:#ef4444; font-weight:bold; text-decoration:none;">${escapeHtml(a.title || '')}</a>
+        <br><span style="color:#888; font-size:12px;">${escapeHtml(a.entity_name || '')} | ${escapeHtml(a.source || '')} | ${pubDate}</span>
+        <br><span style="font-size:13px; color:#333;">${escapeHtml((a.snippet || '').substring(0, 200))}</span>
       </td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 
   try {
+    const recipients = to.split(',').map(e => e.trim()).filter(Boolean);
+    if (recipients.length === 0) return { sent: false, error: 'No valid recipients' };
+
     await resend.emails.send({
       from,
-      to: to.split(',').map(e => e.trim()),
+      to: recipients,
       subject: `🚨 Alert: ${articles.length} negative/priority article(s) — Competitor Intel`,
       html: `
         <div style="font-family: -apple-system, sans-serif; max-width:600px; margin:0 auto;">
@@ -173,7 +193,8 @@ export async function sendAlertEmail(articles: Article[]): Promise<{ sent: boole
       `,
     });
     return { sent: true };
-  } catch (err: any) {
-    return { sent: false, error: err.message };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { sent: false, error: msg };
   }
 }

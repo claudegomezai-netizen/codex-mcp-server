@@ -2,6 +2,16 @@ import nodemailer from 'nodemailer';
 import { SELF, ALL_ENTITIES, type Article } from '../config/competitors.js';
 import { getUnalertedNegativeArticles, markAlerted, getArticlesForEntity, getAllEntitiesWithCustom } from './blobStore.js';
 
+/** Escape untrusted strings for safe HTML embedding */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 async function markAlertedAll(articles: Article[]): Promise<void> {
   const byEntity = new Map<string, string[]>();
   for (const a of articles) {
@@ -28,16 +38,24 @@ function getSmtpConfig() {
 }
 
 function buildAlertHtml(articles: Article[]): string {
-  const rows = articles.map(a => `
+  const rows = articles.map(a => {
+    const safeLink = escapeHtml(a.link || '');
+    const safeTitle = escapeHtml(a.title || '');
+    const safeSource = escapeHtml(a.source || '');
+    const safeSnippet = escapeHtml(a.snippet ? a.snippet.substring(0, 200) + '...' : '');
+    const safeLabel = escapeHtml(a.sentiment_label || '');
+    const pubDate = (() => { try { return new Date(a.pub_date).toLocaleDateString(); } catch { return 'N/A'; } })();
+    return `
     <tr>
       <td style="padding:8px; border-bottom:1px solid #eee;">
-        <a href="${a.link}" style="color:#c0392b; font-weight:bold;">${a.title}</a>
-        <br><span style="color:#888; font-size:12px;">${a.source} | ${new Date(a.pub_date).toLocaleDateString()}</span>
-        <br><span style="font-size:13px; color:#333;">${a.snippet ? a.snippet.substring(0, 200) + '...' : ''}</span>
-        <br><span style="color:#c0392b; font-size:11px;">Sentiment: ${a.sentiment_score} (${a.sentiment_label})</span>
+        <a href="${safeLink}" style="color:#c0392b; font-weight:bold;">${safeTitle}</a>
+        <br><span style="color:#888; font-size:12px;">${safeSource} | ${pubDate}</span>
+        <br><span style="font-size:13px; color:#333;">${safeSnippet}</span>
+        <br><span style="color:#c0392b; font-size:11px;">Sentiment: ${a.sentiment_score} (${safeLabel})</span>
       </td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 
   return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -90,8 +108,7 @@ export async function checkAndAlertNegativeArticles(): Promise<{
 
   const smtp = getSmtpConfig();
   if (!smtp) {
-    console.log('[ALERT] SMTP not configured - marking articles as alerted without sending');
-    await markAlertedAll(articles);
+    console.log('[ALERT] SMTP not configured - articles left unalerted for future delivery');
     return { sent: false, reason: 'SMTP not configured', articles: articles.length };
   }
 
@@ -99,7 +116,7 @@ export async function checkAndAlertNegativeArticles(): Promise<{
   const alertFrom = Netlify.env.get('ALERT_FROM') || smtp.auth.user;
 
   if (!alertTo) {
-    await markAlertedAll(articles);
+    console.log('[ALERT] ALERT_TO not set - articles left unalerted for future delivery');
     return { sent: false, reason: 'ALERT_TO not set', articles: articles.length };
   }
 

@@ -106,7 +106,8 @@ function parseAumFromText(text: string): {
   }
 
   // Look for discretionary/non-discretionary split
-  const discPattern = /discretionary\s*[:\s]*\$\s*([\d,.]+)\s*(billion|trillion|million)?/gi;
+  // Use negative lookbehind to ensure "discretionary" is NOT preceded by "non-" or "non "
+  const discPattern = /(?<!non[- ]?)discretionary\s*[:\s]*\$\s*([\d,.]+)\s*(billion|trillion|million)?/gi;
   const nonDiscPattern = /non[- ]?discretionary\s*[:\s]*\$\s*([\d,.]+)\s*(billion|trillion|million)?/gi;
 
   let match;

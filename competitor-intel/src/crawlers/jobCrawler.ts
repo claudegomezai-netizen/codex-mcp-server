@@ -58,54 +58,68 @@ export async function crawlJobs(): Promise<number> {
           department: classifyDepartment(title),
           seniority: classifySeniority(title),
           url: item.link || '',
-          posted_date: item.pubDate
-            ? new Date(item.pubDate).toISOString().split('T')[0]
-            : new Date().toISOString().split('T')[0],
+          posted_date: (() => {
+            try {
+              const d = item.pubDate ? new Date(item.pubDate) : null;
+              return (d && !isNaN(d.getTime())) ? d.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+            } catch { return new Date().toISOString().split('T')[0]; }
+          })(),
           source: 'Google News',
           created_at: new Date().toISOString(),
         });
       }
-    } catch {
-      // Skip errors
+    } catch (err) {
+      console.warn(`[Jobs] RSS error for ${entity.name}:`, err);
     }
 
     if (i + 1 < targets.length) await new Promise(r => setTimeout(r, 200));
   }
 
-  const added = await addJobPostings(postings);
+  let added = 0;
+  let errorMsg: string | null = null;
+  try {
+    added = await addJobPostings(postings);
 
-  // Generate trend summaries
-  const trends: JobTrend[] = [];
-  for (const entity of targets) {
-    const entityPostings = await getJobPostings(entity.id);
-    if (entityPostings.length === 0) continue;
+    // Generate trend summaries
+    const trends: JobTrend[] = [];
+    for (const entity of targets) {
+      const entityPostings = await getJobPostings(entity.id);
+      if (entityPostings.length === 0) continue;
 
-    const byDept: Record<string, number> = {};
-    const bySeniority: Record<string, number> = {};
-    for (const p of entityPostings) {
-      byDept[p.department] = (byDept[p.department] || 0) + 1;
-      bySeniority[p.seniority] = (bySeniority[p.seniority] || 0) + 1;
+      const byDept: Record<string, number> = {};
+      const bySeniority: Record<string, number> = {};
+      for (const p of entityPostings) {
+        byDept[p.department] = (byDept[p.department] || 0) + 1;
+        bySeniority[p.seniority] = (bySeniority[p.seniority] || 0) + 1;
+      }
+
+      trends.push({
+        entity_id: entity.id,
+        entity_name: entity.name,
+        total_postings: entityPostings.length,
+        by_department: byDept,
+        by_seniority: bySeniority,
+        snapshot_date: new Date().toISOString().split('T')[0],
+      });
     }
-
-    trends.push({
-      entity_id: entity.id,
-      entity_name: entity.name,
-      total_postings: entityPostings.length,
-      by_department: byDept,
-      by_seniority: bySeniority,
-      snapshot_date: new Date().toISOString().split('T')[0],
-    });
+    await saveJobTrends(trends);
+  } catch (err: any) {
+    errorMsg = err.message;
+    console.error(`[Jobs] Storage/trend error: ${err.message}`);
   }
-  await saveJobTrends(trends);
 
-  await logCrawl({
-    crawl_type: 'job_postings',
-    entity_id: null,
-    articles_found: added,
-    status: 'success',
-    error_message: null,
-    finished_at: new Date().toISOString(),
-  });
+  try {
+    await logCrawl({
+      crawl_type: 'job_postings',
+      entity_id: null,
+      articles_found: added,
+      status: errorMsg ? 'error' : 'success',
+      error_message: errorMsg,
+      finished_at: new Date().toISOString(),
+    });
+  } catch (logErr) {
+    console.warn('[Jobs] logCrawl failed:', logErr);
+  }
 
   return added;
 }

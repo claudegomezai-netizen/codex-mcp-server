@@ -69,14 +69,18 @@ export async function crawlAllFinancialNews(): Promise<number> {
         return articles;
       } catch (err: any) {
         console.error(`  ${source.name}: ERROR - ${err.message}`);
-        await logCrawl({
-          crawl_type: 'financial-news',
-          entity_id: source.domain,
-          articles_found: 0,
-          status: 'error',
-          error_message: err.message,
-          finished_at: new Date().toISOString(),
-        });
+        try {
+          await logCrawl({
+            crawl_type: 'financial-news',
+            entity_id: source.domain,
+            articles_found: 0,
+            status: 'error',
+            error_message: err.message,
+            finished_at: new Date().toISOString(),
+          });
+        } catch (logErr) {
+          console.warn(`  ${source.name}: logCrawl also failed:`, logErr);
+        }
         return [] as FinancialArticle[];
       }
     })
@@ -86,7 +90,15 @@ export async function crawlAllFinancialNews(): Promise<number> {
     if (r.status === 'fulfilled') allArticles.push(...r.value);
   }
 
-  totalNew = allArticles.length > 0 ? await addFinArticles(allArticles) : 0;
+  // Dedup across sources — same link can appear from different domains
+  const seenLinks = new Set<string>();
+  const dedupedArticles = allArticles.filter(a => {
+    if (!a.link || seenLinks.has(a.link)) return false;
+    seenLinks.add(a.link);
+    return true;
+  });
+
+  totalNew = dedupedArticles.length > 0 ? await addFinArticles(dedupedArticles) : 0;
 
   console.log(`[${new Date().toISOString()}] Financial news crawl complete. ${totalNew} new articles.`);
   return totalNew;

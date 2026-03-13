@@ -135,20 +135,24 @@ export async function crawlMarketIndicators(): Promise<number> {
     // Process in batches of 5 with 600ms delay to stay under FRED 120/min limit
     for (let i = 0; i < FRED_SERIES_CONFIG.length; i++) {
       const config = FRED_SERIES_CONFIG[i];
-      const points = await fetchFredSeries(config.id, apiKey);
-      if (points.length > 0) {
-        fredSeries.push({
-          series_id: config.id,
-          label: config.label,
-          unit: config.unit,
-          category: config.category,
-          source_url: config.source_url,
-          latest_value: points[points.length - 1].value,
-          latest_date: points[points.length - 1].date,
-          data_points: points,
-        });
+      try {
+        const points = await fetchFredSeries(config.id, apiKey);
+        if (points.length > 0) {
+          fredSeries.push({
+            series_id: config.id,
+            label: config.label,
+            unit: config.unit,
+            category: config.category,
+            source_url: config.source_url,
+            latest_value: points[points.length - 1].value,
+            latest_date: points[points.length - 1].date,
+            data_points: points,
+          });
+        }
+      } catch (err) {
+        console.warn(`[FRED] Error fetching ${config.id}:`, err);
       }
-      // Rate limit: pause every 5 requests
+      // Rate limit: pause every 5 requests (600ms × ceil(33/5) ≈ 4.2s total, well under 120/min)
       if ((i + 1) % 5 === 0 && i < FRED_SERIES_CONFIG.length - 1) {
         await new Promise(r => setTimeout(r, 600));
       }
@@ -157,12 +161,19 @@ export async function crawlMarketIndicators(): Promise<number> {
 
   const fearGreed = await fetchFearGreed();
 
-  // Calculate yield spread (10Y - 2Y)
+  // Calculate yield spread (10Y - 2Y) — only if from matching dates
   const t10y = fredSeries.find(s => s.series_id === 'DGS10');
   const t2y = fredSeries.find(s => s.series_id === 'DGS2');
-  const yieldSpread = (t10y && t2y)
-    ? parseFloat((t10y.latest_value - t2y.latest_value).toFixed(2))
-    : null;
+  let yieldSpread: number | null = null;
+  if (t10y && t2y) {
+    if (t10y.latest_date === t2y.latest_date) {
+      yieldSpread = parseFloat((t10y.latest_value - t2y.latest_value).toFixed(2));
+    } else {
+      // Use T10Y2Y series directly if available (already computed by FRED)
+      const t10y2y = fredSeries.find(s => s.series_id === 'T10Y2Y');
+      yieldSpread = t10y2y ? t10y2y.latest_value : parseFloat((t10y.latest_value - t2y.latest_value).toFixed(2));
+    }
+  }
 
   const indicators: MarketIndicators = {
     fred_series: fredSeries,

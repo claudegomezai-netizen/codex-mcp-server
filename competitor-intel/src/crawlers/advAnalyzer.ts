@@ -52,8 +52,8 @@ async function searchIAPD(entityName: string): Promise<IAPDHit | null> {
         return norm.includes(nameNorm) || nameNorm.includes(norm);
       });
     });
-    // Fall back to first IA hit, then any hit
-    return match || hits.find(h => h._source.firm_ia_scope) || hits[0] || null;
+    // Only return the exact match — don't fall back to unrelated firms
+    return match || null;
   } catch {
     return null;
   }
@@ -164,14 +164,18 @@ export async function analyzeAdv(entityId?: string): Promise<number> {
     if (i + 1 < targets.length) await new Promise(r => setTimeout(r, 500));
   }
 
-  await logCrawl({
-    crawl_type: 'adv_analysis',
-    entity_id: entityId || null,
-    articles_found: analyzed,
-    status: 'success',
-    error_message: null,
-    finished_at: new Date().toISOString(),
-  });
+  try {
+    await logCrawl({
+      crawl_type: 'adv_analysis',
+      entity_id: entityId || null,
+      articles_found: analyzed,
+      status: analyzed > 0 ? 'success' : 'completed',
+      error_message: analyzed === 0 ? 'No entities matched in IAPD' : null,
+      finished_at: new Date().toISOString(),
+    });
+  } catch (logErr) {
+    console.warn('[ADV] Failed to log crawl:', logErr);
+  }
 
   return analyzed;
 }
