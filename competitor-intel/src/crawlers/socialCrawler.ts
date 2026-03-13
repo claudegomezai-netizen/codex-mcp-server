@@ -1,16 +1,18 @@
 /**
- * Social Media Crawler — Reddit + StockTwits
+ * Social Media Crawler — Reddit (public JSON) + StockTwits
  * Monitors competitor mentions across social platforms
+ * Reddit: uses public .json endpoints (no OAuth / API key needed)
+ * StockTwits: uses public API (no key needed)
  */
 
 import type { SocialPost, SocialBuzz, SocialFeedData } from '../config/competitors.js';
 import { ALL_ENTITIES } from '../config/competitors.js';
 import { saveSocialFeed } from '../services/blobStore.js';
 
-// ── Reddit OAuth ────────────────────────────────────────
+// ── Reddit (Public JSON) ───────────────────────────────
 
-const REDDIT_TOKEN_URL = 'https://www.reddit.com/api/v1/access_token';
-const REDDIT_API = 'https://oauth.reddit.com';
+const REDDIT_BASE = 'https://www.reddit.com';
+const USER_AGENT = 'CompetitorIntelDashboard/1.0 (The Dobbs Group alerts@dobbsgroup.com)';
 
 const SUBREDDITS = [
   'investing', 'finance', 'wallstreetbets', 'financialplanning',
@@ -18,37 +20,7 @@ const SUBREDDITS = [
   'FinancialAdvisors', 'institutionalinvestors',
 ];
 
-async function getRedditToken(): Promise<string | null> {
-  const clientId = process.env.REDDIT_CLIENT_ID;
-  const clientSecret = process.env.REDDIT_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return null;
-
-  try {
-    const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    const res = await fetch(REDDIT_TOKEN_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'CompetitorIntelDashboard/1.0',
-      },
-      body: 'grant_type=client_credentials',
-    });
-
-    if (!res.ok) {
-      console.warn(`[Reddit] Token request failed: ${res.status}`);
-      return null;
-    }
-
-    const data = await res.json();
-    return data.access_token || null;
-  } catch (err) {
-    console.warn('[Reddit] Token error:', err);
-    return null;
-  }
-}
-
-interface RedditPost {
+interface RedditChild {
   data: {
     id: string;
     title: string;
@@ -63,21 +35,27 @@ interface RedditPost {
   };
 }
 
-async function searchReddit(
-  token: string,
-  query: string,
-  subreddit?: string
-): Promise<RedditPost[]> {
+async function searchRedditPublic(query: string): Promise<RedditChild[]> {
   try {
-    const sub = subreddit ? `/r/${subreddit}` : '';
-    const url = `${REDDIT_API}${sub}/search?q=${encodeURIComponent(query)}&sort=new&t=week&limit=10&type=link`;
+    // Search across all of Reddit via public JSON endpoint
+    const params = new URLSearchParams({
+      q: query,
+      sort: 'new',
+      t: 'week',
+      limit: '15',
+      type: 'link',
+    });
+    const url = `${REDDIT_BASE}/search.json?${params}`;
 
     const res = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'User-Agent': 'CompetitorIntelDashboard/1.0',
-      },
+      headers: { 'User-Agent': USER_AGENT },
     });
+
+    if (res.status === 429) {
+      console.warn(`[Reddit] Rate limited, backing off...`);
+      await new Promise(r => setTimeout(r, 5000));
+      return [];
+    }
 
     if (!res.ok) {
       console.warn(`[Reddit] Search failed for "${query}": ${res.status}`);
@@ -88,6 +66,35 @@ async function searchReddit(
     return data?.data?.children || [];
   } catch (err) {
     console.warn(`[Reddit] Search error for "${query}":`, err);
+    return [];
+  }
+}
+
+async function searchSubreddit(subreddit: string, query: string): Promise<RedditChild[]> {
+  try {
+    const params = new URLSearchParams({
+      q: query,
+      sort: 'new',
+      t: 'week',
+      limit: '10',
+      restrict_sr: 'true',
+      type: 'link',
+    });
+    const url = `${REDDIT_BASE}/r/${subreddit}/search.json?${params}`;
+
+    const res = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT },
+    });
+
+    if (res.status === 429) {
+      await new Promise(r => setTimeout(r, 5000));
+      return [];
+    }
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    return data?.data?.children || [];
+  } catch {
     return [];
   }
 }
@@ -106,59 +113,15 @@ interface StockTwitsMessage {
   conversation?: { replies: number };
 }
 
-async function searchStockTwits(query: string): Promise<StockTwitsMessage[]> {
-  try {
-    const url = `${STOCKTWITS_API}/search/symbols.json?q=${encodeURIComponent(query)}`;
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'CompetitorIntelDashboard/1.0' },
-    });
-
-    if (!res.ok) {
-      // StockTwits also has a search endpoint for messages
-      // Fall back to searching trending if symbol search fails
-      console.warn(`[StockTwits] Symbol search failed for "${query}": ${res.status}`);
-      return [];
-    }
-
-    const data = await res.json();
-    // If we found a symbol, get its stream
-    if (data?.results?.length > 0) {
-      const symbol = data.results[0].symbol;
-      return await getStockTwitsStream(symbol);
-    }
-
-    return [];
-  } catch (err) {
-    console.warn(`[StockTwits] Error for "${query}":`, err);
-    return [];
-  }
-}
-
-async function getStockTwitsStream(symbol: string): Promise<StockTwitsMessage[]> {
-  try {
-    const url = `${STOCKTWITS_API}/streams/symbol/${symbol}.json?limit=15`;
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'CompetitorIntelDashboard/1.0' },
-    });
-
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data?.messages || [];
-  } catch {
-    return [];
-  }
-}
-
 async function searchStockTwitsGeneral(query: string): Promise<StockTwitsMessage[]> {
   try {
-    // Use the general search endpoint
     const url = `${STOCKTWITS_API}/search.json?q=${encodeURIComponent(query)}&type=messages&limit=10`;
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'CompetitorIntelDashboard/1.0' },
+      headers: { 'User-Agent': USER_AGENT },
     });
 
     if (!res.ok) {
-      console.warn(`[StockTwits] General search failed: ${res.status}`);
+      console.warn(`[StockTwits] Search failed for "${query}": ${res.status}`);
       return [];
     }
 
@@ -207,86 +170,88 @@ function analyzeSentiment(text: string): { score: number; label: 'positive' | 'n
 
 // Build search terms for each entity — use short distinctive names
 function getSearchTerms(entityName: string): string[] {
-  // For the key competitors, use concise search-friendly terms
   const shortNames: Record<string, string[]> = {
     'The Dobbs Group': ['"Dobbs Group"', '"Graystone Consulting"'],
-    'NEPC': ['"NEPC" investing'],
-    'Mercer Investment Consulting': ['"Mercer" investment consulting'],
+    'NEPC': ['NEPC investing'],
+    'Mercer Investment Consulting': ['Mercer investment consulting'],
     'Callan Associates': ['"Callan Associates"'],
     'Cambridge Associates': ['"Cambridge Associates"'],
-    'Meketa Investment Group': ['"Meketa"'],
+    'Meketa Investment Group': ['Meketa investment'],
     'Wilshire Associates': ['"Wilshire Associates"'],
     'Marquette Associates': ['"Marquette Associates"'],
-    'CAPTRUST': ['"CAPTRUST"'],
-    'J.P. Morgan Asset Management': ['"JP Morgan" asset management'],
-    'UBS Institutional Consulting': ['"UBS" institutional'],
+    'CAPTRUST': ['CAPTRUST financial'],
+    'J.P. Morgan Asset Management': ['JP Morgan asset management'],
+    'UBS Institutional Consulting': ['UBS institutional consulting'],
     'William Blair': ['"William Blair"'],
-    'SageView Advisory Group': ['"SageView"'],
+    'SageView Advisory Group': ['SageView advisory'],
   };
 
   return shortNames[entityName] || [`"${entityName}"`];
 }
 
+// Dedup posts by ID
+function dedup(posts: SocialPost[]): SocialPost[] {
+  const seen = new Set<string>();
+  return posts.filter(p => {
+    if (seen.has(p.id)) return false;
+    seen.add(p.id);
+    return true;
+  });
+}
+
 export async function crawlSocialMedia(): Promise<number> {
   const now = new Date().toISOString();
   const allPosts: SocialPost[] = [];
+  const entities = ALL_ENTITIES.slice(0, 13); // Main competitors only
 
-  // ── Reddit Crawl ──
-  const redditToken = await getRedditToken();
+  // ── Reddit Crawl (public JSON, no auth needed) ──
   let redditCount = 0;
+  console.log('[Social] Searching Reddit (public JSON)...');
 
-  if (redditToken) {
-    console.log('[Social] Reddit authenticated, searching subreddits...');
+  for (const entity of entities) {
+    const terms = getSearchTerms(entity.name);
 
-    // Search for each entity in key subreddits
-    for (const entity of ALL_ENTITIES.slice(0, 13)) { // Main competitors only
-      const terms = getSearchTerms(entity.name);
+    for (const term of terms) {
+      // Global search first
+      const posts = await searchRedditPublic(term);
 
-      for (const term of terms) {
-        // Search across all subreddits at once (faster than per-subreddit)
-        const posts = await searchReddit(redditToken, term);
+      for (const post of posts) {
+        const d = post.data;
+        const text = `${d.title} ${d.selftext || ''}`;
+        const sentiment = analyzeSentiment(text);
 
-        for (const post of posts) {
-          const d = post.data;
-          const text = `${d.title} ${d.selftext || ''}`;
-          const sentiment = analyzeSentiment(text);
-
-          allPosts.push({
-            id: `reddit-${d.id}`,
-            platform: 'reddit',
-            entity_id: entity.id,
-            entity_name: entity.name,
-            author: d.author,
-            content: (d.selftext || '').slice(0, 500),
-            title: d.title,
-            subreddit: d.subreddit,
-            url: `https://reddit.com${d.permalink}`,
-            score: d.score,
-            comments: d.num_comments,
-            sentiment_score: sentiment.score,
-            sentiment_label: sentiment.label,
-            posted_at: new Date(d.created_utc * 1000).toISOString(),
-            fetched_at: now,
-          });
-          redditCount++;
-        }
-
-        // Rate limit: 60 req/min for OAuth
-        await new Promise(r => setTimeout(r, 300));
+        allPosts.push({
+          id: `reddit-${d.id}`,
+          platform: 'reddit',
+          entity_id: entity.id,
+          entity_name: entity.name,
+          author: d.author,
+          content: (d.selftext || '').slice(0, 500),
+          title: d.title,
+          subreddit: d.subreddit,
+          url: `https://reddit.com${d.permalink}`,
+          score: d.score,
+          comments: d.num_comments,
+          sentiment_score: sentiment.score,
+          sentiment_label: sentiment.label,
+          posted_at: new Date(d.created_utc * 1000).toISOString(),
+          fetched_at: now,
+        });
+        redditCount++;
       }
+
+      // Respect Reddit rate limits — ~1 req/sec for unauthenticated
+      await new Promise(r => setTimeout(r, 1100));
     }
-    console.log(`[Social] Reddit: ${redditCount} posts found`);
-  } else {
-    console.warn('[Social] Reddit credentials not set (REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET), skipping Reddit');
   }
+
+  console.log(`[Social] Reddit: ${redditCount} posts found`);
 
   // ── StockTwits Crawl ──
   let stwCount = 0;
   console.log('[Social] Searching StockTwits...');
 
-  // StockTwits works better with ticker-like searches or company names
-  // Search for key entity names using general search
-  for (const entity of ALL_ENTITIES.slice(0, 13)) {
+  for (const entity of entities) {
     const terms = getSearchTerms(entity.name);
 
     for (const term of terms) {
@@ -319,10 +284,14 @@ export async function crawlSocialMedia(): Promise<number> {
   }
   console.log(`[Social] StockTwits: ${stwCount} posts found`);
 
+  // ── Dedup ──
+  const uniquePosts = dedup(allPosts);
+  console.log(`[Social] ${allPosts.length} total → ${uniquePosts.length} unique posts`);
+
   // ── Build buzz summary ──
   const buzzMap = new Map<string, SocialBuzz>();
 
-  for (const post of allPosts) {
+  for (const post of uniquePosts) {
     let buzz = buzzMap.get(post.entity_id);
     if (!buzz) {
       buzz = {
@@ -352,7 +321,7 @@ export async function crawlSocialMedia(): Promise<number> {
 
   // Compute average sentiment per entity
   for (const [entityId, buzz] of buzzMap) {
-    const entityPosts = allPosts.filter(p => p.entity_id === entityId);
+    const entityPosts = uniquePosts.filter(p => p.entity_id === entityId);
     if (entityPosts.length > 0) {
       const total = entityPosts.reduce((sum, p) => sum + p.sentiment_score, 0);
       buzz.avg_sentiment = parseFloat((total / entityPosts.length).toFixed(2));
@@ -365,7 +334,7 @@ export async function crawlSocialMedia(): Promise<number> {
 
   // ── Save ──
   const feedData: SocialFeedData = {
-    posts: allPosts
+    posts: uniquePosts
       .sort((a, b) => new Date(b.posted_at).getTime() - new Date(a.posted_at).getTime())
       .slice(0, 1000),
     buzz_summary: buzzSummary,
@@ -373,5 +342,5 @@ export async function crawlSocialMedia(): Promise<number> {
   };
 
   await saveSocialFeed(feedData);
-  return allPosts.length;
+  return uniquePosts.length;
 }
