@@ -1564,6 +1564,7 @@ async function loadBriefSocialBuzz() {
     var emptyEl = card.querySelector('.empty');
     if (emptyEl) emptyEl.textContent = 'Social data unavailable.';
   }
+}
 
 // ── Competitor Discovery ────────────────────────────────
 async function discoverCompetitors() {
