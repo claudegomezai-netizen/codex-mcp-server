@@ -18,9 +18,14 @@ function extractSource(item: any): string {
   return parts.length > 1 ? parts[parts.length - 1].trim() : item.creator || 'Unknown';
 }
 
+function stripHtml(text: string): string {
+  return (text || '').replace(/<[^>]*>/g, '').replace(/&[^;]+;/g, ' ').trim();
+}
+
 function cleanTitle(title: string): string {
-  const parts = (title || '').split(' - ');
-  return parts.length > 1 ? parts.slice(0, -1).join(' - ').trim() : title || '';
+  const stripped = stripHtml(title);
+  const parts = stripped.split(' - ');
+  return parts.length > 1 ? parts.slice(0, -1).join(' - ').trim() : stripped;
 }
 
 function makeId(): string {
@@ -64,50 +69,64 @@ async function crawlEntityQueries(entity: Entity): Promise<Article[]> {
     })
   );
 
-  return queryResults
+  // Dedup within same entity — multiple queries can return the same article
+  const allArticles = queryResults
     .filter((r): r is PromiseFulfilledResult<Article[]> => r.status === 'fulfilled')
     .flatMap(r => r.value);
+  const seenLinks = new Set<string>();
+  return allArticles.filter(a => {
+    if (seenLinks.has(a.link)) return false;
+    seenLinks.add(a.link);
+    return true;
+  });
+}
+
+// Process entities in batches to limit concurrency
+async function crawlInBatches(allEntities: Entity[], batchSize = 5): Promise<number> {
+  let totalNew = 0;
+  for (let i = 0; i < allEntities.length; i += batchSize) {
+    const batch = allEntities.slice(i, i + batchSize);
+    const results = await Promise.allSettled(
+      batch.map(async (entity) => {
+        try {
+          const articles = await crawlEntityQueries(entity);
+          const newCount = await addArticles(entity.id, articles);
+          console.log(`  ${entity.name}: ${newCount} new articles`);
+          await logCrawl({
+            crawl_type: 'news',
+            entity_id: entity.id,
+            articles_found: newCount,
+            status: 'success',
+            error_message: null,
+            finished_at: new Date().toISOString(),
+          });
+          return newCount;
+        } catch (err: any) {
+          console.error(`  ${entity.name}: ERROR - ${err.message}`);
+          await logCrawl({
+            crawl_type: 'news',
+            entity_id: entity.id,
+            articles_found: 0,
+            status: 'error',
+            error_message: err.message,
+            finished_at: new Date().toISOString(),
+          });
+          return 0;
+        }
+      })
+    );
+    totalNew += results
+      .filter((r): r is PromiseFulfilledResult<number> => r.status === 'fulfilled')
+      .reduce((sum, r) => sum + r.value, 0);
+  }
+  return totalNew;
 }
 
 export async function crawlAll(): Promise<number> {
   const allEntities = await getAllEntitiesWithCustom();
-  console.log(`[${new Date().toISOString()}] Starting parallel news crawl for ${allEntities.length} entities...`);
-  let totalNew = 0;
+  console.log(`[${new Date().toISOString()}] Starting batched news crawl for ${allEntities.length} entities...`);
 
-  // Crawl all entities in parallel for speed (no delays needed in serverless)
-  const results = await Promise.allSettled(
-    allEntities.map(async (entity) => {
-      try {
-        const articles = await crawlEntityQueries(entity);
-        const newCount = await addArticles(entity.id, articles);
-        console.log(`  ${entity.name}: ${newCount} new articles`);
-        await logCrawl({
-          crawl_type: 'news',
-          entity_id: entity.id,
-          articles_found: newCount,
-          status: 'success',
-          error_message: null,
-          finished_at: new Date().toISOString(),
-        });
-        return newCount;
-      } catch (err: any) {
-        console.error(`  ${entity.name}: ERROR - ${err.message}`);
-        await logCrawl({
-          crawl_type: 'news',
-          entity_id: entity.id,
-          articles_found: 0,
-          status: 'error',
-          error_message: err.message,
-          finished_at: new Date().toISOString(),
-        });
-        return 0;
-      }
-    })
-  );
-
-  totalNew = results
-    .filter((r): r is PromiseFulfilledResult<number> => r.status === 'fulfilled')
-    .reduce((sum, r) => sum + r.value, 0);
+  const totalNew = await crawlInBatches(allEntities, 5);
 
   console.log(`[${new Date().toISOString()}] News crawl complete. ${totalNew} new articles.`);
   return totalNew;

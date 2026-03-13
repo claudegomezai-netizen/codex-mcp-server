@@ -101,7 +101,7 @@ interface EntitySearch {
 // Map entities to search terms + StockTwits symbols
 function getEntitySearches(): EntitySearch[] {
   const map: Record<string, { reddit: string[]; stw: string[] }> = {
-    'The Dobbs Group':              { reddit: ['"Dobbs Group"', '"Graystone Consulting"'],   stw: ['MS'] },
+    'The Dobbs Group':              { reddit: ['"Dobbs Group"', '"Graystone Consulting"'],   stw: [] },  // MS is Morgan Stanley, not Dobbs Group
     'NEPC':                         { reddit: ['NEPC investment consulting'],                 stw: [] },
     'Mercer Investment Consulting': { reddit: ['Mercer investment consulting'],               stw: [] },
     'Callan Associates':            { reddit: ['"Callan Associates"'],                        stw: [] },
@@ -164,16 +164,17 @@ export async function crawlSocialMedia(): Promise<number> {
         const posts = await searchReddit(term);
         for (const p of posts) {
           const d = p.data;
+          if (!d || !d.id || !d.title) continue;  // skip malformed entries
           const s = sentiment(`${d.title} ${d.selftext || ''}`);
           redditPosts.push({
             id: `reddit-${d.id}`, platform: 'reddit',
             entity_id: entity.id, entity_name: entity.name,
-            author: d.author, content: (d.selftext || '').slice(0, 500),
-            title: d.title, subreddit: d.subreddit,
-            url: `https://reddit.com${d.permalink}`,
-            score: d.score, comments: d.num_comments,
+            author: d.author || 'unknown', content: (d.selftext || '').slice(0, 500),
+            title: d.title, subreddit: d.subreddit || '',
+            url: d.permalink ? `https://reddit.com${d.permalink}` : '',
+            score: Number(d.score) || 0, comments: Number(d.num_comments) || 0,
             sentiment_score: s.score, sentiment_label: s.label,
-            posted_at: new Date(d.created_utc * 1000).toISOString(),
+            posted_at: d.created_utc ? new Date(d.created_utc * 1000).toISOString() : now,
             fetched_at: now,
           });
         }
@@ -186,6 +187,7 @@ export async function crawlSocialMedia(): Promise<number> {
       const posts = await searchReddit(term);
       for (const p of posts) {
         const d = p.data;
+        if (!d || !d.id || !d.title) continue;  // skip malformed entries
         const text = `${d.title} ${d.selftext || ''}`.toLowerCase();
         const s = sentiment(`${d.title} ${d.selftext || ''}`);
         // Try to match to a known entity
@@ -196,12 +198,12 @@ export async function crawlSocialMedia(): Promise<number> {
           id: `reddit-${d.id}`, platform: 'reddit',
           entity_id: match?.id || 'industry',
           entity_name: match?.name || 'Industry Discussion',
-          author: d.author, content: (d.selftext || '').slice(0, 500),
-          title: d.title, subreddit: d.subreddit,
-          url: `https://reddit.com${d.permalink}`,
-          score: d.score, comments: d.num_comments,
+          author: d.author || 'unknown', content: (d.selftext || '').slice(0, 500),
+          title: d.title, subreddit: d.subreddit || '',
+          url: d.permalink ? `https://reddit.com${d.permalink}` : '',
+          score: Number(d.score) || 0, comments: Number(d.num_comments) || 0,
           sentiment_score: s.score, sentiment_label: s.label,
-          posted_at: new Date(d.created_utc * 1000).toISOString(),
+          posted_at: d.created_utc ? new Date(d.created_utc * 1000).toISOString() : now,
           fetched_at: now,
         });
       }
@@ -239,15 +241,16 @@ export async function crawlSocialMedia(): Promise<number> {
     for (const [symbol, entity] of allSymbols) {
       const messages = await getStockTwitsStream(symbol);
       for (const msg of messages) {
+        if (!msg || !msg.id || !msg.body) continue;  // skip malformed
         const s = sentiment(msg.body);
         stwPosts.push({
           id: `stw-${msg.id}`, platform: 'stocktwits',
           entity_id: entity.id, entity_name: entity.name,
           author: msg.user?.username || 'unknown',
-          content: msg.body.slice(0, 500),
+          content: (msg.body || '').slice(0, 500),
           url: `https://stocktwits.com/message/${msg.id}`,
-          score: msg.likes?.total || 0,
-          comments: msg.conversation?.replies || 0,
+          score: Number(msg.likes?.total) || 0,
+          comments: Number(msg.conversation?.replies) || 0,
           sentiment_score: s.score, sentiment_label: s.label,
           posted_at: msg.created_at || now,
           fetched_at: now,

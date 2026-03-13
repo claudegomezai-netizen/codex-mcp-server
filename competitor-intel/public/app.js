@@ -51,7 +51,9 @@ const TAB_CRAWL_MAP = {
 async function loadCrawlLogCache() {
   try {
     var res = await apiFetch('/api/crawl-log');
+    if (!res.ok) { _crawlLogCache = []; return; }
     _crawlLogCache = await res.json();
+    if (!Array.isArray(_crawlLogCache)) _crawlLogCache = [];
   } catch (e) {
     _crawlLogCache = [];
   }
@@ -60,14 +62,19 @@ async function loadCrawlLogCache() {
 function getLastCrawlTime(crawlType) {
   if (!_crawlLogCache || !crawlType) return null;
   for (var i = 0; i < _crawlLogCache.length; i++) {
-    if (_crawlLogCache[i].crawl_type === crawlType && _crawlLogCache[i].status === 'success') {
-      return new Date(_crawlLogCache[i].finished_at || _crawlLogCache[i].started_at);
+    var entry = _crawlLogCache[i];
+    if (entry.crawl_type === crawlType && (entry.status === 'success' || entry.status === 'completed')) {
+      var ts = entry.finished_at || entry.started_at;
+      if (!ts) continue;
+      var d = new Date(ts);
+      if (isNaN(d.getTime())) continue;  // skip invalid dates
+      return d;
     }
   }
   return null;
 }
 
-function formatTimeAgo(date) {
+function formatStalenessLabel(date) {
   if (!date) return 'Never';
   var diff = (Date.now() - date.getTime()) / 1000;
   if (diff < 60) return 'Just now';
@@ -86,7 +93,7 @@ function showLastUpdated(tabName) {
   var cfg = TAB_CRAWL_MAP[tabName];
   if (!cfg) return;
   var last = getLastCrawlTime(cfg.crawlType);
-  var label = formatTimeAgo(last);
+  var label = formatStalenessLabel(last);
   // Find or create the timestamp badge next to the button
   var btn = cfg.btnId ? document.getElementById(cfg.btnId) : null;
   if (!btn) return;
@@ -133,8 +140,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Auth check — redirect to login if no token
   if (!getAuthToken()) { window.location.href = '/login.html'; return; }
   await loadEntities();
-  // Load crawl log for auto-refresh timestamps
-  loadCrawlLogCache();
+  // Load crawl log for auto-refresh timestamps (await to prevent race with switchTab)
+  await loadCrawlLogCache();
   // Restore last active tab, or default to Daily Brief
   var savedTab = null;
   try { savedTab = localStorage.getItem('ci_active_tab'); } catch(e) {}

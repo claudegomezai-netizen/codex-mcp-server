@@ -215,7 +215,8 @@ export async function addGovEvents(newEvents: GovEvent[]): Promise<number> {
   if (unique.length === 0) return 0;
 
   const merged = [...existing, ...unique]
-    .sort((a, b) => a.event_date.localeCompare(b.event_date));
+    .sort((a, b) => a.event_date.localeCompare(b.event_date))
+    .slice(-2000);  // Cap at 2000 events to prevent unbounded growth
 
   await store.setJSON('all', merged);
   return unique.length;
@@ -396,6 +397,7 @@ export async function addPredictionMarkets(markets: PredictionMarket[]): Promise
       if (!m.end_date) return true;
       return new Date(m.end_date).getTime() > Date.now() - 7 * 86400000;
     })
+    .sort((a, b) => b.volume - a.volume)  // sort before truncating to keep highest-volume
     .slice(0, 500);
 
   await store.setJSON('all', merged);

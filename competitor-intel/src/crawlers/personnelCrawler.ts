@@ -27,14 +27,16 @@ function detectChangeType(text: string): PersonnelChange['change_type'] {
 
 function extractPersonName(text: string): string {
   // Try common patterns: "John Smith appointed as..." or "... appoints John Smith"
+  // Support names with hyphens, apostrophes, and prefixes (O'Brien, McDowell, etc.)
+  const namePattern = `([A-Z][a-zA-Z'\\-]+(?:\\s(?:[A-Z][a-zA-Z'\\-]+|[A-Z]\\.)){1,3})`;
   const patterns = [
-    /([A-Z][a-z]+ [A-Z][a-z]+(?:\s[A-Z][a-z]+)?)\s*(?:has been|was|is)\s*(?:appointed|named|hired|promoted)/,
-    /(?:appoints?|names?|hires?|promotes?)\s*([A-Z][a-z]+ [A-Z][a-z]+(?:\s[A-Z][a-z]+)?)/,
-    /([A-Z][a-z]+ [A-Z][a-z]+(?:\s[A-Z][a-z]+)?)\s*(?:joins?|leaves?|resigns?|retires?|departs?)/,
+    new RegExp(namePattern + `\\s*(?:has been|was|is)\\s*(?:appointed|named|hired|promoted)`),
+    new RegExp(`(?:appoints?|names?|hires?|promotes?)\\s*` + namePattern),
+    new RegExp(namePattern + `\\s*(?:joins?|leaves?|resigns?|retires?|departs?)`),
   ];
   for (const p of patterns) {
     const m = text.match(p);
-    if (m) return m[1];
+    if (m) return m[1].trim();
   }
   return '';
 }
@@ -74,6 +76,17 @@ export async function crawlPersonnel(): Promise<number> {
           const personName = extractPersonName(title);
           if (!personName) continue;
 
+          // Safely parse date — avoid Invalid Date crash
+          let dateStr: string;
+          try {
+            const parsed = item.pubDate ? new Date(item.pubDate) : null;
+            dateStr = (parsed && !isNaN(parsed.getTime()))
+              ? parsed.toISOString().split('T')[0]
+              : new Date().toISOString().split('T')[0];
+          } catch {
+            dateStr = new Date().toISOString().split('T')[0];
+          }
+
           changes.push({
             id: makeId(),
             entity_id: entity.id,
@@ -84,13 +97,13 @@ export async function crawlPersonnel(): Promise<number> {
             change_type: detectChangeType(title),
             source: 'Google News',
             source_url: item.link || '',
-            date: item.pubDate ? new Date(item.pubDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            date: dateStr,
             details: title,
             created_at: new Date().toISOString(),
           });
         }
-      } catch {
-        // Skip RSS errors
+      } catch (err) {
+        console.warn(`[Personnel] RSS error for ${entity.name}:`, err);
       }
     }
     await new Promise(r => setTimeout(r, 200));
@@ -100,7 +113,8 @@ export async function crawlPersonnel(): Promise<number> {
   const recentFilings = await getSecFilings({ filingType: '8-K', limit: 50 });
   const last30Days = Date.now() - 30 * 86400000;
   for (const filing of recentFilings) {
-    if (new Date(filing.filed_date).getTime() < last30Days) continue;
+    const filedTime = new Date(filing.filed_date).getTime();
+    if (isNaN(filedTime) || filedTime < last30Days) continue;
     const desc = (filing.description || '').toLowerCase();
     const isPersonnel = PERSONNEL_KEYWORDS.some(kw => desc.includes(kw));
     if (!isPersonnel) continue;
