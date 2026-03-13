@@ -127,6 +127,7 @@ export async function generateBrief(): Promise<DailyBrief> {
     sentiment_label: a.sentiment_label,
     pub_date: a.pub_date,
     reason: getArticleReason(a),
+    snippet: a.snippet || '',
   }));
 
   // ── 3. Risk Alerts ──

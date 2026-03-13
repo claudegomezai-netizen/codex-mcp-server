@@ -156,6 +156,7 @@ export interface DailyBrief {
     sentiment_label: string;
     pub_date: string;
     reason: string;
+    snippet?: string;
   }>;
   risk_alerts: Array<{
     company_name: string;

@@ -1465,18 +1465,22 @@ function renderBrief(brief) {
   // ── Primary Grid ──
   html += '<div class="brief-grid-primary">';
 
-  // Left: Top Stories
+  // Left: Top Stories (with snippets + async supplement)
   html += '<div class="brief-card" style="animation-delay:0.3s">';
   html += '<div class="brief-card-header"><span class="brief-card-title">\u26A1 Top Stories</span><span class="brief-card-badge" style="background:var(--surface2);color:var(--text-muted)">' + brief.top_stories.length + ' stories</span></div>';
   if (brief.top_stories.length > 0) {
     var first = brief.top_stories[0];
-    html += '<div class="brief-featured"><div class="story-title"><a href="' + escHtml(first.link) + '" target="_blank" rel="noopener">' + escHtml(first.title) + '</a></div><div class="story-meta"><span class="story-entity">' + escHtml(first.entity_name) + '</span><span class="brief-reason brief-reason-' + first.reason.toLowerCase().replace(/\s+/g, '-') + '">' + escHtml(first.reason) + '</span><span>' + formatDateTime(first.pub_date) + '</span></div></div>';
+    var firstSnippet = first.snippet ? '<div class="story-snippet">' + escHtml(first.snippet.substring(0, 180)) + (first.snippet.length > 180 ? '…' : '') + '</div>' : '';
+    html += '<div class="brief-featured"><div class="story-title"><a href="' + escHtml(first.link) + '" target="_blank" rel="noopener">' + escHtml(first.title) + '</a></div>' + firstSnippet + '<div class="story-meta"><span class="story-entity">' + escHtml(first.entity_name) + '</span><span class="brief-reason brief-reason-' + first.reason.toLowerCase().replace(/\s+/g, '-') + '">' + escHtml(first.reason) + '</span><span>' + formatDateTime(first.pub_date) + '</span></div></div>';
     brief.top_stories.slice(1).forEach(function(st) {
-      html += '<div class="brief-story-row"><span class="story-dot ' + st.sentiment_label + '"></span><div><div class="story-title"><a href="' + escHtml(st.link) + '" target="_blank" rel="noopener">' + escHtml(st.title) + '</a></div><div class="story-meta"><span class="story-entity">' + escHtml(st.entity_name) + '</span><span class="brief-reason brief-reason-' + st.reason.toLowerCase().replace(/\s+/g, '-') + '">' + escHtml(st.reason) + '</span><span>' + formatDateTime(st.pub_date) + '</span></div></div></div>';
+      var stSnippet = st.snippet ? '<div class="story-snippet">' + escHtml(st.snippet.substring(0, 120)) + (st.snippet.length > 120 ? '…' : '') + '</div>' : '';
+      html += '<div class="brief-story-row"><span class="story-dot ' + st.sentiment_label + '"></span><div style="flex:1;min-width:0"><div class="story-title"><a href="' + escHtml(st.link) + '" target="_blank" rel="noopener">' + escHtml(st.title) + '</a></div>' + stSnippet + '<div class="story-meta"><span class="story-entity">' + escHtml(st.entity_name) + '</span><span class="brief-reason brief-reason-' + st.reason.toLowerCase().replace(/\s+/g, '-') + '">' + escHtml(st.reason) + '</span><span>' + formatDateTime(st.pub_date) + '</span></div></div></div>';
     });
   } else {
     html += '<div class="empty">No priority stories in this period.</div>';
   }
+  // Placeholder for async-loaded additional articles
+  html += '<div id="briefMoreStories"></div>';
   html += '</div>';
 
   // Right sidebar
@@ -1668,6 +1672,8 @@ function renderBrief(brief) {
     });
   }, 100);
 
+  // Async-load supplemental stories to fill Top Stories card
+  loadBriefMoreStories(brief.top_stories || []);
   // Async-load social buzz into brief card
   loadBriefSocialBuzz();
   // Async-load ADV + Financial News
@@ -1677,6 +1683,35 @@ function renderBrief(brief) {
   loadBriefPersonnel();
   // Async-load trending topics from articles
   loadBriefTrendingTopics();
+}
+
+// ── Brief: Supplement Top Stories with recent articles ───
+async function loadBriefMoreStories(existingStories) {
+  var container = document.getElementById('briefMoreStories');
+  if (!container) return;
+  try {
+    // Only supplement if brief has fewer than 8 stories
+    var need = 12 - existingStories.length;
+    if (need <= 0) return;
+    var res = await apiFetch('/api/articles?limit=' + (need + 10));
+    var articles = await res.json();
+    if (!articles || articles.length === 0) return;
+    // Deduplicate: exclude articles already in top stories by link
+    var existingLinks = {};
+    existingStories.forEach(function(s) { existingLinks[s.link] = true; });
+    var extras = articles.filter(function(a) { return !existingLinks[a.link]; }).slice(0, need);
+    if (extras.length === 0) return;
+    var inner = '<div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px">';
+    inner += '<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:8px;font-weight:600">More Headlines</div>';
+    extras.forEach(function(a) {
+      var snip = a.snippet ? '<div class="story-snippet">' + escHtml(a.snippet.substring(0, 120)) + (a.snippet.length > 120 ? '\u2026' : '') + '</div>' : '';
+      inner += '<div class="brief-story-row"><span class="story-dot ' + (a.sentiment_label || 'neutral') + '"></span><div style="flex:1;min-width:0"><div class="story-title"><a href="' + escHtml(a.link) + '" target="_blank" rel="noopener">' + escHtml(a.title || 'Untitled') + '</a></div>' + snip + '<div class="story-meta"><span class="story-entity">' + escHtml(a.entity_name || '') + '</span><span>' + formatDateTime(a.pub_date) + '</span></div></div></div>';
+    });
+    inner += '</div>';
+    container.innerHTML = inner;
+  } catch (err) {
+    // silently fail — supplemental content is optional
+  }
 }
 
 async function loadBriefSocialBuzz() {
@@ -1729,15 +1764,32 @@ async function loadBriefAdv() {
     inner += '<div style="text-align:center;padding:6px;border-radius:8px;background:var(--surface2)"><div style="font-size:18px;font-weight:700;color:var(--accent)">' + totalBranches + '</div><div style="font-size:10px;color:var(--text-muted)">Branches</div></div>';
     inner += '</div>';
 
-    // List firms with status
+    // List firms with enriched details
     var sorted = analyses.slice().sort(function(a, b) { return (a.firm_name || '').localeCompare(b.firm_name || ''); });
     sorted.slice(0, 6).forEach(function(a) {
       var statusColor = a.registration_status === 'ACTIVE' ? 'var(--positive)' : 'var(--negative)';
       var discFlag = a.has_disclosures ? ' <span style="color:var(--negative);font-size:10px" title="Has disclosures">\u26A0</span>' : '';
-      inner += '<div class="comp-row"><span class="comp-name">' + escHtml(a.firm_name || a.entity_name || 'Unknown') + discFlag + '</span><span class="comp-count" style="color:' + statusColor + ';font-size:11px">' + escHtml(a.registration_status || '?') + '</span></div>';
+      // Build detail chips: branches, states, filing recency
+      var details = [];
+      if (a.branches_count > 0) details.push(a.branches_count + (a.branches_count === 1 ? ' branch' : ' branches'));
+      var statesCount = (a.notice_states && a.notice_states.length) || 0;
+      if (statesCount > 0) details.push(statesCount + (statesCount === 1 ? ' state' : ' states'));
+      if (a.filing_date) {
+        var fd = new Date(a.filing_date);
+        if (!isNaN(fd.getTime())) {
+          var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          details.push('Filed ' + months[fd.getMonth()] + ' ' + fd.getFullYear());
+        }
+      }
+      inner += '<div style="padding:5px 0;border-bottom:1px solid var(--border)">';
+      inner += '<div class="comp-row" style="margin-bottom:0"><span class="comp-name">' + escHtml(a.firm_name || a.entity_name || 'Unknown') + discFlag + '</span><span class="comp-count" style="color:' + statusColor + ';font-size:11px">' + escHtml(a.registration_status || '?') + '</span></div>';
+      if (details.length > 0) {
+        inner += '<div style="font-size:10px;color:var(--text-muted);padding-left:2px;margin-top:2px">' + details.join(' · ') + '</div>';
+      }
+      inner += '</div>';
     });
     if (analyses.length > 6) {
-      inner += '<div style="text-align:center;font-size:11px;color:var(--text-muted);margin-top:4px">+' + (analyses.length - 6) + ' more</div>';
+      inner += '<div style="text-align:center;font-size:11px;color:var(--text-muted);margin-top:6px">+' + (analyses.length - 6) + ' more — see Form ADV tab</div>';
     }
     card.innerHTML = inner;
   } catch (err) {
@@ -2764,6 +2816,18 @@ async function loadTrends(autoCapture) {
 function renderTrends(snapshots, metric) {
   const chartEl = document.getElementById('trendsChart');
   const tableEl = document.getElementById('trendsTable');
+  const explainerEl = document.getElementById('trendsExplainer');
+
+  // Metric explanations
+  var explanations = {
+    '': '<strong>All Metrics</strong> — Showing every tracked data point across all entities. Use the filters above to narrow by metric type or entity. Each snapshot captures a point-in-time measurement that, over successive captures, reveals performance trends.',
+    'aum': '<strong>Assets Under Management (AUM)</strong> — Total assets each firm manages or advises on, measured in billions of dollars. Rising AUM indicates organic growth or market appreciation; declining AUM may signal client attrition or market losses.',
+    'sentiment': '<strong>Sentiment Score</strong> — Ranges from −1.0 (very negative) to +1.0 (very positive), computed from recent news article analysis. A sustained drop may indicate reputational risk or adverse press coverage for a competitor.',
+    'article_count': '<strong>Article Count</strong> — Number of news articles published about each entity in the snapshot period. Spikes often correspond to major announcements, regulatory actions, or market events.',
+  };
+  if (explainerEl) {
+    explainerEl.innerHTML = '<div class="trend-explainer-box">' + (explanations[metric || ''] || explanations['']) + ' <em>Click any bar or legend item to filter by that entity.</em></div>';
+  }
 
   if (!snapshots || snapshots.length === 0) {
     chartEl.innerHTML = '<div class="v2-empty">No trend data yet. Click "Capture Snapshot" to start tracking.</div>';
@@ -2792,14 +2856,17 @@ function renderTrends(snapshots, metric) {
       const val = Number(pts[0].value) || 0;
       const pct = Math.max((Math.abs(val) / maxVal) * 100, 3);
       const color = colors[i % colors.length];
-      barsHtml += '<div class="trend-bar-row" style="animation-delay:' + (i * 0.04) + 's">';
+      const entityId = pts[0].entity_id || '';
+      const metricType = pts[0].metric_type || '';
+      var valLabel = metricType === 'aum' ? '$' + val.toFixed(1) + 'B' : metricType === 'sentiment' ? val.toFixed(2) + ' score' : metricType === 'article_count' ? Math.round(val) + ' articles' : val.toFixed(2);
+      barsHtml += '<div class="trend-bar-row trend-bar-clickable" style="animation-delay:' + (i * 0.04) + 's" onclick="filterTrendByEntity(\'' + escHtml(entityId) + '\')" title="Click to filter by this entity">';
       barsHtml += '<span class="trend-bar-label">' + escHtml(key) + '</span>';
       barsHtml += '<div class="trend-bar-track"><div class="trend-bar-fill" style="width:' + pct + '%;background:' + color + '"></div></div>';
-      barsHtml += '<span class="trend-bar-value">' + val.toFixed(2) + '</span>';
+      barsHtml += '<span class="trend-bar-value">' + valLabel + '</span>';
       barsHtml += '</div>';
     });
     chartEl.innerHTML = '<div class="brief-card" style="padding:20px;margin-bottom:14px;">' +
-      '<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Snapshot: ' + escHtml(allDates[0] || 'Today') + ' &middot; Capture more snapshots over time to see trend lines</div>' +
+      '<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Snapshot: ' + escHtml(allDates[0] || 'Today') + ' · Click a bar to filter by entity · Capture more snapshots to see trend lines</div>' +
       barsHtml + '</div>';
   } else {
     // ── LINE CHART for multi-date data ──
@@ -2816,18 +2883,19 @@ function renderTrends(snapshots, metric) {
     for (const [name, pts] of Object.entries(byEntity)) {
       const sorted = pts.sort((a, b) => a.date.localeCompare(b.date));
       const color = colors[colorIdx % colors.length];
+      const entityId = sorted[0].entity_id || '';
       const coords = sorted.map(p => {
         const x = pad + (allDates.indexOf(p.date) / Math.max(allDates.length - 1, 1)) * (w - 2 * pad);
         const y = pad + (1 - ((Number(p.value) || 0) - minV) / range) * (h - 2 * pad);
-        return { x: x, y: y };
+        return { x: x, y: y, date: p.date, value: Number(p.value) || 0 };
       });
       if (coords.length > 1) {
         svgLines += `<polyline points="${coords.map(c => c.x + ',' + c.y).join(' ')}" fill="none" stroke="${color}" stroke-width="2"/>`;
       }
-      coords.forEach(c => {
-        svgLines += `<circle cx="${c.x}" cy="${c.y}" r="4" fill="${color}" stroke="var(--surface)" stroke-width="2"/>`;
+      coords.forEach(function(c) {
+        svgLines += `<circle cx="${c.x}" cy="${c.y}" r="5" fill="${color}" stroke="var(--surface)" stroke-width="2" style="cursor:pointer" onclick="filterTrendByEntity('${escHtml(entityId)}')" onmouseover="showTrendTip(evt, '${escHtml(name)}', '${c.date}', ${c.value})" onmouseout="hideTrendTip()"><title>${escHtml(name)}: ${c.value.toFixed(2)} on ${c.date}</title></circle>`;
       });
-      legendHtml += `<span class="trend-legend-item"><span class="trend-legend-dot" style="background:${color}"></span>${escHtml(name)}</span>`;
+      legendHtml += `<span class="trend-legend-item trend-legend-clickable" onclick="filterTrendByEntity('${escHtml(entityId)}')" title="Click to filter by this entity"><span class="trend-legend-dot" style="background:${color}"></span>${escHtml(name)}</span>`;
       colorIdx++;
     }
 
@@ -2845,25 +2913,30 @@ function renderTrends(snapshots, metric) {
     chartEl.innerHTML = `
       <div class="brief-card" style="padding:20px; margin-bottom:14px;">
         <div class="trend-legend" style="margin-bottom:12px;">${legendHtml}</div>
-        <svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" class="trend-svg">
-          <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${h - pad}" stroke="var(--border)" stroke-width="1"/>
-          <line x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}" stroke="var(--border)" stroke-width="1"/>
-          ${yLabels}${xLabels}${svgLines}
-        </svg>
+        <div style="position:relative">
+          <svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" class="trend-svg">
+            <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${h - pad}" stroke="var(--border)" stroke-width="1"/>
+            <line x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}" stroke="var(--border)" stroke-width="1"/>
+            ${yLabels}${xLabels}${svgLines}
+          </svg>
+          <div id="trendTip" class="trend-tooltip" style="display:none"></div>
+        </div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:8px;text-align:center">Click a data point or legend item to filter by entity</div>
       </div>
     `;
   }
 
-  // Table
+  // Table with clickable entity names
   const metricLabel = metric === 'aum' ? 'AUM ($B)' : metric === 'sentiment' ? 'Score' : metric === 'article_count' ? 'Count' : 'Value';
   const showMetricCol = !metric; // Show metric type column when "All Metrics" selected
   tableEl.innerHTML = `
     <div class="v2-table-card">
     <table class="v2-table">
       <thead><tr><th>Date</th><th>Entity</th>${showMetricCol ? '<th>Metric</th>' : ''}<th>${metricLabel}</th></tr></thead>
-      <tbody>${snapshots.slice(-50).reverse().map(s => `
-        <tr><td>${s.date || ''}</td><td>${escHtml(s.entity_name || '')}</td>${showMetricCol ? '<td>' + escHtml(s.metric_type || '') + '</td>' : ''}<td class="num">${(Number(s.value) || 0).toFixed(2)}</td></tr>
-      `).join('')}</tbody>
+      <tbody>${snapshots.slice(-50).reverse().map(s => {
+        var valDisplay = metric === 'aum' ? '$' + (Number(s.value) || 0).toFixed(1) + 'B' : (Number(s.value) || 0).toFixed(2);
+        return `<tr><td>${s.date || ''}</td><td><a href="#" class="trend-entity-link" onclick="filterTrendByEntity('${escHtml(s.entity_id || '')}');return false">${escHtml(s.entity_name || '')}</a></td>${showMetricCol ? '<td><span class="trend-metric-tag">' + escHtml(s.metric_type || '') + '</span></td>' : ''}<td class="num">${valDisplay}</td></tr>`;
+      }).join('')}</tbody>
     </table>
     </div>
   `;
@@ -2884,6 +2957,41 @@ async function triggerTrendCapture() {
     btn.textContent = 'Error';
     setTimeout(() => { btn.textContent = 'Capture Snapshot'; btn.disabled = false; }, 3000);
   }
+}
+
+// ── Trend helpers: click & tooltip ──
+function filterTrendByEntity(entityId) {
+  if (!entityId) return;
+  var sel = document.getElementById('trendEntity');
+  if (!sel) return;
+  // Find the option matching this entity
+  for (var i = 0; i < sel.options.length; i++) {
+    if (sel.options[i].value === entityId) {
+      sel.value = entityId;
+      loadTrends();
+      return;
+    }
+  }
+  // If entity not in dropdown, it may not be populated yet — still try
+  sel.value = entityId;
+  loadTrends();
+}
+
+function showTrendTip(evt, name, date, value) {
+  var tip = document.getElementById('trendTip');
+  if (!tip) return;
+  tip.innerHTML = '<strong>' + escHtml(name) + '</strong><br>' + date + '<br>' + value.toFixed(2);
+  tip.style.display = 'block';
+  var rect = evt.target.closest('.brief-card').getBoundingClientRect();
+  var cx = evt.clientX - rect.left;
+  var cy = evt.clientY - rect.top;
+  tip.style.left = (cx + 12) + 'px';
+  tip.style.top = (cy - 10) + 'px';
+}
+
+function hideTrendTip() {
+  var tip = document.getElementById('trendTip');
+  if (tip) tip.style.display = 'none';
 }
 
 // ── Personnel ───────────────────────────────────────────
@@ -2965,6 +3073,9 @@ async function triggerPersonnelCrawl() {
 
 
 // ── Jobs ────────────────────────────────────────────────
+var _allJobPostings = []; // stored for entity filtering
+var _jobEntityFilter = ''; // current entity filter
+
 async function loadJobs() {
   try {
     const [postsRes, trendsRes] = await Promise.all([
@@ -2973,11 +3084,27 @@ async function loadJobs() {
     ]);
     const postings = await postsRes.json();
     const trends = await trendsRes.json();
+    _allJobPostings = postings || [];
     renderJobTrends(trends);
-    renderJobPostings(postings);
+    renderJobPostings(_allJobPostings, _jobEntityFilter);
   } catch (err) {
     console.error('Failed to load jobs:', err);
   }
+}
+
+function filterJobsByEntity(entityName) {
+  _jobEntityFilter = (_jobEntityFilter === entityName) ? '' : entityName; // toggle
+  renderJobPostings(_allJobPostings, _jobEntityFilter);
+  // Scroll to postings table
+  var el = document.getElementById('jobPostings');
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Highlight active trend row
+  document.querySelectorAll('.job-trend-row').forEach(function(row) {
+    row.classList.remove('job-trend-active');
+    if (_jobEntityFilter && row.dataset.entity === _jobEntityFilter) {
+      row.classList.add('job-trend-active');
+    }
+  });
 }
 
 function renderJobTrends(trends) {
@@ -2997,13 +3124,15 @@ function renderJobTrends(trends) {
       <div class="kpi-card"><div class="kpi-value">${sorted.length}</div><div class="kpi-label">Entities Hiring</div></div>
       <div class="kpi-card"><div class="kpi-value">${sorted[0]?.entity_name || '-'}</div><div class="kpi-label" style="font-size:9px">Top Hirer</div></div>
     </div>
-    <h3 style="margin-bottom:12px;">Hiring Trends by Entity</h3>
+    <h3 style="margin-bottom:4px;">Hiring Trends by Entity</h3>
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Click an entity to filter the postings table below</div>
     <div class="job-trends-grid">
       ${sorted.map(t => {
         const pct = Math.max((t.total_postings / maxPost) * 100, 3);
         const depts = Object.entries(t.by_department || {}).sort((a, b) => b[1] - a[1]).slice(0, 3);
+        const isActive = _jobEntityFilter === t.entity_name;
         return `
-          <div class="job-trend-row">
+          <div class="job-trend-row job-trend-clickable${isActive ? ' job-trend-active' : ''}" data-entity="${escHtml(t.entity_name)}" onclick="filterJobsByEntity('${escHtml(t.entity_name).replace(/'/g, "\\'")}')" title="Click to filter postings for ${escHtml(t.entity_name)}">
             <div class="job-trend-label">
               <span class="job-trend-name">${escHtml(t.entity_name)}</span>
               <span class="job-trend-count">${t.total_postings} postings</span>
@@ -3017,19 +3146,23 @@ function renderJobTrends(trends) {
   `;
 }
 
-function renderJobPostings(postings) {
+function renderJobPostings(postings, entityFilter) {
   const container = document.getElementById('jobPostings');
   if (!postings || postings.length === 0) {
     container.innerHTML = '<div class="v2-empty">No job postings found. Click "Scan Job Postings" to crawl.</div>';
     return;
   }
 
+  var filtered = entityFilter ? postings.filter(function(j) { return j.entity_name === entityFilter; }) : postings;
+  var filterNote = entityFilter ? '<div class="job-filter-active">Showing <strong>' + filtered.length + '</strong> postings for <strong>' + escHtml(entityFilter) + '</strong> <a href="#" onclick="filterJobsByEntity(\'\');return false" style="color:var(--primary);margin-left:8px">× Clear filter</a></div>' : '';
+
   container.innerHTML = `
     <h3 style="margin:16px 0 12px;">Recent Postings</h3>
+    ${filterNote}
     <div class="v2-table-card">
     <table class="v2-table">
       <thead><tr><th>Date</th><th>Entity</th><th>Title</th><th>Department</th><th>Seniority</th><th>Location</th></tr></thead>
-      <tbody>${postings.slice(0, 100).map(j => `
+      <tbody>${filtered.slice(0, 100).map(j => `
         <tr>
           <td>${j.posted_date || ''}</td>
           <td>${escHtml(j.entity_name || '')}</td>
