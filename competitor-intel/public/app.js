@@ -1472,7 +1472,7 @@ function renderBrief(brief) {
     var first = brief.top_stories[0];
     var firstSnippet = first.snippet ? '<div class="story-snippet">' + escHtml(first.snippet.substring(0, 180)) + (first.snippet.length > 180 ? '…' : '') + '</div>' : '';
     html += '<div class="brief-featured"><div class="story-title"><a href="' + escHtml(first.link) + '" target="_blank" rel="noopener">' + escHtml(first.title) + '</a></div>' + firstSnippet + '<div class="story-meta"><span class="story-entity">' + escHtml(first.entity_name) + '</span><span class="brief-reason brief-reason-' + first.reason.toLowerCase().replace(/\s+/g, '-') + '">' + escHtml(first.reason) + '</span><span>' + formatDateTime(first.pub_date) + '</span></div></div>';
-    brief.top_stories.slice(1).forEach(function(st) {
+    brief.top_stories.slice(1, 9).forEach(function(st) {
       var stSnippet = st.snippet ? '<div class="story-snippet">' + escHtml(st.snippet.substring(0, 120)) + (st.snippet.length > 120 ? '…' : '') + '</div>' : '';
       html += '<div class="brief-story-row"><span class="story-dot ' + st.sentiment_label + '"></span><div style="flex:1;min-width:0"><div class="story-title"><a href="' + escHtml(st.link) + '" target="_blank" rel="noopener">' + escHtml(st.title) + '</a></div>' + stSnippet + '<div class="story-meta"><span class="story-entity">' + escHtml(st.entity_name) + '</span><span class="brief-reason brief-reason-' + st.reason.toLowerCase().replace(/\s+/g, '-') + '">' + escHtml(st.reason) + '</span><span>' + formatDateTime(st.pub_date) + '</span></div></div></div>';
     });
@@ -1690,8 +1690,8 @@ async function loadBriefMoreStories(existingStories) {
   var container = document.getElementById('briefMoreStories');
   if (!container) return;
   try {
-    // Only supplement if brief has fewer than 8 stories
-    var need = 12 - existingStories.length;
+    // Only supplement if brief has fewer than 9 stories total
+    var need = 9 - existingStories.length;
     if (need <= 0) return;
     var res = await apiFetch('/api/articles?limit=' + (need + 10));
     var articles = await res.json();
