@@ -144,6 +144,62 @@ export async function crawlPersonnel(): Promise<number> {
 
   const added = await addPersonnelChanges(changes);
 
+  // Cross-reference new changes against People Watchlist
+  try {
+    const { getWatchedPeople, addWatchlistAlerts, markWatchlistAlertEmailed, getWatchlistAlerts } = await import('../services/blobStore.js');
+    const { sendWatchlistAlert } = await import('../services/resendEmail.js');
+    const watchedPeople = await getWatchedPeople({ status: 'watching' });
+    if (watchedPeople.length > 0 && changes.length > 0) {
+      const existingAlerts = await getWatchlistAlerts({});
+      const existingUrls = new Set(existingAlerts.map(a => a.source_url));
+      const watchAlerts: import('../config/competitors.js').WatchlistAlert[] = [];
+
+      for (const change of changes) {
+        if (!change.person_name) continue;
+        const cTokens = change.person_name.toLowerCase().split(/\s+/).filter(t => t.length > 1);
+        if (cTokens.length < 2) continue;
+
+        for (const person of watchedPeople) {
+          const wTokens = person.name.toLowerCase().split(/\s+/).filter(t => t.length > 1);
+          if (wTokens.length < 2) continue;
+          if (wTokens[0] === cTokens[0] && wTokens[wTokens.length - 1] === cTokens[cTokens.length - 1]) {
+            const sourceUrl = change.source_url || `personnel-${change.id}`;
+            if (existingUrls.has(sourceUrl)) continue;
+            watchAlerts.push({
+              id: `wa-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+              watched_person_id: person.id,
+              person_name: person.name,
+              category: person.category,
+              alert_type: change.change_type === 'departure' ? 'departure' : change.change_type === 'hire' ? 'new_role' : 'mention',
+              headline: change.details || `${change.person_name} — ${change.change_type} at ${change.entity_name}`,
+              source_url: sourceUrl,
+              snippet: change.details || '',
+              detected_company: change.entity_name,
+              detected_role: change.new_role || '',
+              date: change.date,
+              created_at: new Date().toISOString(),
+              email_sent: false,
+              acknowledged: false,
+            });
+            existingUrls.add(sourceUrl);
+          }
+        }
+      }
+
+      if (watchAlerts.length > 0) {
+        await addWatchlistAlerts(watchAlerts);
+        try {
+          const result = await sendWatchlistAlert(watchAlerts, watchedPeople);
+          if (result.sent) {
+            for (const a of watchAlerts) await markWatchlistAlertEmailed(a.id);
+          }
+        } catch (emailErr) {
+          console.warn('[Personnel→Watchlist] Email failed:', emailErr);
+        }
+      }
+    }
+  } catch (e) { console.warn('[Personnel] Watchlist cross-ref failed:', e); }
+
   await logCrawl({
     crawl_type: 'personnel',
     entity_id: null,

@@ -236,6 +236,15 @@ export interface DailyBrief {
     }>;
   };
   total_aum_billions?: number;
+  watchlist_alerts?: Array<{
+    person_name: string;
+    category: string;
+    alert_type: string;
+    headline: string;
+    source_url: string;
+    detected_company: string;
+    date: string;
+  }>;
 }
 
 export const SELF: Entity = {
@@ -844,4 +853,36 @@ export interface JobTrend {
   by_department: Record<string, number>;
   by_seniority: Record<string, number>;
   snapshot_date: string;
+}
+
+// ── People Watchlist ──────────────────────────────────
+
+export interface WatchedPerson {
+  id: string;
+  name: string;
+  current_company: string;
+  current_role: string;
+  category: 'recruitment' | 'competitive_intel';
+  notes: string;
+  search_queries: string[];
+  added_at: string;
+  last_checked_at: string;
+  status: 'watching' | 'moved' | 'archived';
+}
+
+export interface WatchlistAlert {
+  id: string;
+  watched_person_id: string;
+  person_name: string;
+  category: 'recruitment' | 'competitive_intel';
+  alert_type: 'departure' | 'new_role' | 'mention';
+  headline: string;
+  source_url: string;
+  snippet: string;
+  detected_company: string;
+  detected_role: string;
+  date: string;
+  created_at: string;
+  email_sent: boolean;
+  acknowledged: boolean;
 }

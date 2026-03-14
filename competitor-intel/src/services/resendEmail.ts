@@ -1,5 +1,5 @@
 import { Resend } from 'resend';
-import type { DailyBrief, Article } from '../config/competitors.js';
+import type { DailyBrief, Article, WatchlistAlert, WatchedPerson } from '../config/competitors.js';
 
 /** Escape untrusted strings for safe HTML embedding */
 function escapeHtml(str: string): string {
@@ -195,6 +195,80 @@ export async function sendAlertEmail(articles: Article[]): Promise<{ sent: boole
     return { sent: true };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
+    return { sent: false, error: msg };
+  }
+}
+
+export async function sendWatchlistAlert(
+  alerts: WatchlistAlert[],
+  people: WatchedPerson[]
+): Promise<{ sent: boolean; error?: string }> {
+  const resend = getResend();
+  const { to, from } = getEmailConfig();
+  if (!resend || !to) return { sent: false, error: 'Email not configured' };
+
+  const peopleMap = new Map(people.map(p => [p.id, p]));
+
+  const alertRows = alerts.map(a => {
+    const person = peopleMap.get(a.watched_person_id);
+    const categoryLabel = a.category === 'recruitment' ? 'RECRUITMENT TARGET' : 'COMPETITIVE INTEL';
+    const categoryColor = a.category === 'recruitment' ? '#22c55e' : '#4a6cf7';
+    const typeLabel = a.alert_type === 'departure' ? 'DEPARTURE' : a.alert_type === 'new_role' ? 'NEW ROLE' : 'MENTION';
+    const typeColor = a.alert_type === 'departure' ? '#ef4444' : a.alert_type === 'new_role' ? '#4a6cf7' : '#64748b';
+
+    return `
+      <tr>
+        <td style="padding:12px; border-bottom:1px solid #eee;">
+          <div style="margin-bottom:6px;">
+            <span style="background:${categoryColor}; color:white; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:bold;">${categoryLabel}</span>
+            <span style="background:${typeColor}; color:white; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:bold; margin-left:4px;">${typeLabel}</span>
+          </div>
+          <div style="font-size:18px; font-weight:bold; color:#1a1d27; margin-bottom:4px;">${escapeHtml(a.person_name)}</div>
+          ${a.detected_company ? `<div style="font-size:13px; color:#666;">Company: <strong>${escapeHtml(a.detected_company)}</strong></div>` : ''}
+          ${a.detected_role ? `<div style="font-size:13px; color:#666;">Role: <strong>${escapeHtml(a.detected_role)}</strong></div>` : ''}
+          <div style="margin-top:8px;">
+            <a href="${escapeHtml(a.source_url)}" style="color:#4a6cf7; font-weight:600; text-decoration:none;">${escapeHtml(a.headline)}</a>
+          </div>
+          ${a.snippet ? `<div style="font-size:12px; color:#888; margin-top:4px;">${escapeHtml(a.snippet)}</div>` : ''}
+          ${person?.notes ? `<div style="font-size:12px; color:#4a6cf7; margin-top:6px; padding:6px; background:#f0f4ff; border-radius:4px;"><strong>Why we watch:</strong> ${escapeHtml(person.notes)}</div>` : ''}
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  const subject = alerts.length === 1
+    ? `WATCHLIST ALERT: ${alerts[0].person_name} — ${alerts[0].alert_type.replace('_', ' ')}`
+    : `WATCHLIST: ${alerts.length} people alerts`;
+
+  try {
+    const recipients = to.split(',').map(e => e.trim()).filter(Boolean);
+    if (recipients.length === 0) return { sent: false, error: 'No valid recipients' };
+
+    await resend.emails.send({
+      from,
+      to: recipients,
+      subject,
+      html: `
+        <div style="font-family: -apple-system, sans-serif; max-width:600px; margin:0 auto;">
+          <div style="background: linear-gradient(135deg, #1a1d27 0%, #2e3347 100%); color:white; padding:20px 24px; border-radius:8px 8px 0 0;">
+            <h2 style="margin:0; font-size:20px;">People Watchlist Alert</h2>
+            <p style="margin:4px 0 0; opacity:0.8; font-size:13px;">The Dobbs Group | Graystone Consulting</p>
+          </div>
+          <div style="padding:16px 24px; background:#fff; border:1px solid #e5e7eb;">
+            <table style="width:100%; border-collapse:collapse;">${alertRows}</table>
+          </div>
+          <div style="padding:12px 24px; background:#f9fafb; border-radius:0 0 8px 8px; border:1px solid #e5e7eb; border-top:none;">
+            <p style="margin:0; font-size:11px; color:#9ca3af; text-align:center;">
+              <a href="https://competitor-intel-dashboard.netlify.app" style="color:#4a6cf7;">View Dashboard</a>
+            </p>
+          </div>
+        </div>
+      `,
+    });
+    return { sent: true };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[WATCHLIST EMAIL] Failed: ${msg}`);
     return { sent: false, error: msg };
   }
 }

@@ -469,6 +469,37 @@
     <div id="personnelList" class="personnel-list">
       <div class="empty">Click "Scan for Changes" to monitor leadership changes at competitors.</div>
     </div>
+
+    <!-- Watchlist Sub-Section -->
+    <div class="watchlist-section">
+      <div class="tab-title-bar" style="margin-top:24px">
+        <h2>People Watchlist</h2>
+        <div class="tab-actions">
+          <button class="btn btn-secondary" onclick="toggleWatchlistForm()">+ Add Person</button>
+          <button id="btnWatchlistCrawl" class="btn btn-primary" onclick="triggerWatchlistCrawl()">Scan Watchlist</button>
+        </div>
+      </div>
+      <div id="watchlistAlertStrip"></div>
+      <div id="watchlistAddForm" class="watchlist-add-form" style="display:none">
+        <div class="watchlist-form-grid">
+          <div class="filter-group"><label>Name *</label><input id="wlName" type="text" placeholder="Jane Smith"></div>
+          <div class="filter-group"><label>Current Company *</label><input id="wlCompany" type="text" placeholder="NEPC"></div>
+          <div class="filter-group"><label>Current Role</label><input id="wlRole" type="text" placeholder="CIO"></div>
+          <div class="filter-group"><label>Category</label>
+            <select id="wlCategory">
+              <option value="recruitment">Recruitment Target</option>
+              <option value="competitive_intel">Competitive Intel</option>
+            </select>
+          </div>
+          <div class="filter-group" style="grid-column:1/-1"><label>Notes (why are we watching?)</label><textarea id="wlNotes" rows="2" placeholder="Specializes in endowment consulting, interested in hiring if available"></textarea></div>
+        </div>
+        <button class="btn btn-primary" onclick="addWatchedPerson()" style="margin-top:8px">Add to Watchlist</button>
+      </div>
+      <div id="watchlistKpi"></div>
+      <div id="watchlistPeople" class="watchlist-grid">
+        <div class="empty">No people on your watchlist yet. Click "+ Add Person" to start tracking individuals.</div>
+      </div>
+    </div>
   </section>
 
 

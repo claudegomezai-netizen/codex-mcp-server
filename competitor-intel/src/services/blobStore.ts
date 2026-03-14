@@ -1,5 +1,5 @@
 import { getStore } from '@netlify/blobs';
-import type { Article, GovEvent, CrawlLogEntry, AumEntry, SecFiling, PredictionMarket, CustomEntity, Entity, DailyBrief, FinancialArticle, MarketIndicators, AggregatedSentiment, Filing13F, FinraAlert, FilingSummary, FormAdvAnalysis, TrendSnapshot, PersonnelChange, MandateEvent, JobPosting, JobTrend, SocialPost, SocialFeedData } from '../config/competitors.js';
+import type { Article, GovEvent, CrawlLogEntry, AumEntry, SecFiling, PredictionMarket, CustomEntity, Entity, DailyBrief, FinancialArticle, MarketIndicators, AggregatedSentiment, Filing13F, FinraAlert, FilingSummary, FormAdvAnalysis, TrendSnapshot, PersonnelChange, MandateEvent, JobPosting, JobTrend, SocialPost, SocialFeedData, WatchedPerson, WatchlistAlert } from '../config/competitors.js';
 import { ALL_ENTITIES, SEED_AUM_DATA } from '../config/competitors.js';
 
 function articleStore() {
@@ -743,4 +743,96 @@ export async function addSocialPosts(newPosts: SocialPost[]): Promise<number> {
   existing.updated_at = new Date().toISOString();
   await store.setJSON('latest', existing);
   return unique.length;
+}
+
+// ── People Watchlist ─────────────────────────────────────
+
+function watchlistStore() {
+  return getStore({ name: 'people-watchlist', consistency: 'strong' });
+}
+
+function watchlistAlertStore() {
+  return getStore({ name: 'watchlist-alerts', consistency: 'strong' });
+}
+
+export async function getWatchedPeople(filters?: { category?: string; status?: string }): Promise<WatchedPerson[]> {
+  const store = watchlistStore();
+  const all: WatchedPerson[] = ((await store.get('all', { type: 'json' })) as WatchedPerson[]) || [];
+  let filtered = all;
+  if (filters?.category) filtered = filtered.filter(p => p.category === filters.category);
+  if (filters?.status) filtered = filtered.filter(p => p.status === filters.status);
+  return filtered.sort((a, b) => new Date(b.added_at).getTime() - new Date(a.added_at).getTime());
+}
+
+export async function addWatchedPerson(person: WatchedPerson): Promise<void> {
+  const store = watchlistStore();
+  const existing: WatchedPerson[] = ((await store.get('all', { type: 'json' })) as WatchedPerson[]) || [];
+  const idx = existing.findIndex(p => p.id === person.id);
+  if (idx >= 0) {
+    existing[idx] = person;
+  } else {
+    existing.unshift(person);
+  }
+  await store.setJSON('all', existing.slice(0, 200));
+}
+
+export async function updateWatchedPerson(id: string, updates: Partial<WatchedPerson>): Promise<boolean> {
+  const store = watchlistStore();
+  const existing: WatchedPerson[] = ((await store.get('all', { type: 'json' })) as WatchedPerson[]) || [];
+  const idx = existing.findIndex(p => p.id === id);
+  if (idx < 0) return false;
+  existing[idx] = { ...existing[idx], ...updates };
+  await store.setJSON('all', existing);
+  return true;
+}
+
+export async function removeWatchedPerson(id: string): Promise<boolean> {
+  const store = watchlistStore();
+  const existing: WatchedPerson[] = ((await store.get('all', { type: 'json' })) as WatchedPerson[]) || [];
+  const filtered = existing.filter(p => p.id !== id);
+  if (filtered.length === existing.length) return false;
+  await store.setJSON('all', filtered);
+  return true;
+}
+
+export async function getWatchlistAlerts(filters?: { personId?: string; unacknowledged?: boolean }): Promise<WatchlistAlert[]> {
+  const store = watchlistAlertStore();
+  const all: WatchlistAlert[] = ((await store.get('all', { type: 'json' })) as WatchlistAlert[]) || [];
+  let filtered = all;
+  if (filters?.personId) filtered = filtered.filter(a => a.watched_person_id === filters.personId);
+  if (filters?.unacknowledged) filtered = filtered.filter(a => !a.acknowledged);
+  return filtered.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+}
+
+export async function addWatchlistAlerts(newAlerts: WatchlistAlert[]): Promise<number> {
+  const store = watchlistAlertStore();
+  const existing: WatchlistAlert[] = ((await store.get('all', { type: 'json' })) as WatchlistAlert[]) || [];
+  const existingUrls = new Set(existing.map(a => a.source_url));
+  const unique = newAlerts.filter(a => !existingUrls.has(a.source_url));
+  if (unique.length === 0) return 0;
+  const merged = [...unique, ...existing]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 500);
+  await store.setJSON('all', merged);
+  return unique.length;
+}
+
+export async function acknowledgeWatchlistAlert(alertId: string): Promise<boolean> {
+  const store = watchlistAlertStore();
+  const existing: WatchlistAlert[] = ((await store.get('all', { type: 'json' })) as WatchlistAlert[]) || [];
+  const idx = existing.findIndex(a => a.id === alertId);
+  if (idx < 0) return false;
+  existing[idx].acknowledged = true;
+  await store.setJSON('all', existing);
+  return true;
+}
+
+export async function markWatchlistAlertEmailed(alertId: string): Promise<void> {
+  const store = watchlistAlertStore();
+  const existing: WatchlistAlert[] = ((await store.get('all', { type: 'json' })) as WatchlistAlert[]) || [];
+  const idx = existing.findIndex(a => a.id === alertId);
+  if (idx >= 0) {
+    existing[idx].email_sent = true;
+    await store.setJSON('all', existing);
+  }
 }

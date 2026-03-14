@@ -302,6 +302,24 @@ export async function generateBrief(): Promise<DailyBrief> {
     }
   } catch (e) { console.error('[Brief] AUM fetch failed:', e); }
 
+  // ── 14. Watchlist Alerts (last 24h) ──
+  let watchlist_alerts: DailyBrief['watchlist_alerts'] = [];
+  try {
+    const { getWatchlistAlerts } = await import('./blobStore.js');
+    const allAlerts = await getWatchlistAlerts({});
+    const oneDayAgo = new Date(now.getTime() - 86400000);
+    const recent = allAlerts.filter(a => new Date(a.created_at) >= oneDayAgo);
+    watchlist_alerts = recent.slice(0, 5).map(a => ({
+      person_name: a.person_name,
+      category: a.category,
+      alert_type: a.alert_type,
+      headline: a.headline,
+      source_url: a.source_url,
+      detected_company: a.detected_company,
+      date: a.date,
+    }));
+  } catch (e) { console.error('[Brief] Watchlist alerts fetch failed:', e); }
+
   return {
     generated_at: now.toISOString(),
     market_sentiment,
@@ -318,5 +336,6 @@ export async function generateBrief(): Promise<DailyBrief> {
     market_indicators,
     total_aum_billions,
     aum_leaderboard,
+    watchlist_alerts,
   };
 }

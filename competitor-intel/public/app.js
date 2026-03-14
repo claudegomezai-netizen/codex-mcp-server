@@ -545,7 +545,7 @@ function switchTab(tabName) {
   if (tabName === 'sec') { loadSecFilings(); loadFinraAlerts(); }
   if (tabName === 'adv') loadAdvAnalyses();
   if (tabName === 'trends') { loadTrends(); populateTrendEntitySelect(); }
-  if (tabName === 'personnel') loadPersonnel();
+  if (tabName === 'personnel') { loadPersonnel(); loadWatchlist(); }
   if (tabName === 'jobs') loadJobs();
   if (tabName === 'predictions') loadPredictions();
   if (tabName === 'social') loadSocialFeed();
@@ -1540,6 +1540,24 @@ function renderBrief(brief) {
 
   html += '</div>'; // end sidebar
   html += '</div>'; // end primary grid
+
+  // ── Watchlist Alerts (only shown when alerts exist) ──
+  var wlAlerts = brief.watchlist_alerts || [];
+  if (wlAlerts.length > 0) {
+    html += '<div class="brief-card brief-clickable" style="animation-delay:0.43s;border:1px solid var(--negative);box-shadow:0 0 8px rgba(239,68,68,0.15)" onclick="switchTab(\'personnel\')">';
+    html += '<div class="brief-card-header"><span class="brief-card-title" style="color:var(--negative)">\uD83D\uDD14 Watchlist Alerts</span><span class="brief-card-badge" style="background:var(--negative);color:white">' + wlAlerts.length + ' alert' + (wlAlerts.length > 1 ? 's' : '') + '</span></div>';
+    wlAlerts.forEach(function(wa) {
+      var typeLabel = wa.alert_type === 'departure' ? 'DEPARTURE' : wa.alert_type === 'new_role' ? 'NEW ROLE' : 'MENTION';
+      var typeColor = wa.alert_type === 'departure' ? 'var(--negative)' : wa.alert_type === 'new_role' ? 'var(--primary)' : 'var(--text-muted)';
+      html += '<div style="padding:6px 0;border-bottom:1px solid var(--border)">';
+      html += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:3px"><span style="background:' + typeColor + ';color:white;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:600">' + typeLabel + '</span></div>';
+      html += '<div style="font-weight:700;font-size:13px">' + escHtml(wa.person_name) + '</div>';
+      if (wa.detected_company) html += '<div style="font-size:11px;color:var(--text-muted)">at ' + escHtml(wa.detected_company) + '</div>';
+      html += '<div style="font-size:11px;margin-top:2px"><a href="' + escHtml(wa.source_url) + '" target="_blank" rel="noopener" style="color:var(--primary)">' + escHtml(wa.headline.substring(0, 80)) + '</a></div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
 
   // ── Leadership Moves (full-width, async-loaded from /api/personnel) ──
   html += '<div id="briefLeadershipCard" class="brief-card brief-leadership-card brief-clickable" style="animation-delay:0.45s" onclick="switchTab(\'personnel\')">';
@@ -3071,6 +3089,158 @@ async function triggerPersonnelCrawl() {
   }
 }
 
+
+// ── People Watchlist ─────────────────────────────────────
+
+function toggleWatchlistForm() {
+  var form = document.getElementById('watchlistAddForm');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+async function addWatchedPerson() {
+  var name = document.getElementById('wlName').value.trim();
+  var company = document.getElementById('wlCompany').value.trim();
+  var role = document.getElementById('wlRole').value.trim();
+  var category = document.getElementById('wlCategory').value;
+  var notes = document.getElementById('wlNotes').value.trim();
+  if (!name || !company) { alert('Name and Current Company are required'); return; }
+  try {
+    await apiFetch('/api/watchlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, current_company: company, current_role: role, category: category, notes: notes })
+    });
+    document.getElementById('wlName').value = '';
+    document.getElementById('wlCompany').value = '';
+    document.getElementById('wlRole').value = '';
+    document.getElementById('wlNotes').value = '';
+    document.getElementById('watchlistAddForm').style.display = 'none';
+    loadWatchlist();
+  } catch (err) { alert('Failed to add person'); }
+}
+
+async function removeWatchedPerson(id) {
+  if (!confirm('Remove this person from watchlist?')) return;
+  try {
+    await apiFetch('/api/watchlist?id=' + encodeURIComponent(id), { method: 'DELETE' });
+    loadWatchlist();
+  } catch (err) { alert('Failed to remove'); }
+}
+
+async function archiveWatchedPerson(id) {
+  try {
+    await apiFetch('/api/watchlist', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id, status: 'archived' })
+    });
+    loadWatchlist();
+  } catch (err) { alert('Failed to archive'); }
+}
+
+async function acknowledgeWatchlistAlert(alertId) {
+  try {
+    await apiFetch('/api/watchlist/alerts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alert_id: alertId })
+    });
+    loadWatchlist();
+  } catch (err) { alert('Failed to acknowledge alert'); }
+}
+
+async function triggerWatchlistCrawl() {
+  var btn = document.getElementById('btnWatchlistCrawl');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Scanning...';
+  try {
+    var res = await apiFetch('/api/watchlist/crawl', { method: 'POST' });
+    var data = await res.json();
+    btn.textContent = 'Done! (' + data.found + ' alerts)';
+    setTimeout(function() { btn.textContent = 'Scan Watchlist'; btn.disabled = false; }, 3000);
+    loadWatchlist();
+  } catch (err) {
+    btn.textContent = 'Error';
+    setTimeout(function() { btn.textContent = 'Scan Watchlist'; btn.disabled = false; }, 3000);
+  }
+}
+
+async function loadWatchlist() {
+  try {
+    var [peopleRes, alertsRes] = await Promise.all([
+      apiFetch('/api/watchlist'),
+      apiFetch('/api/watchlist/alerts?unacknowledged=true')
+    ]);
+    var people = await peopleRes.json();
+    var alerts = await alertsRes.json();
+    renderWatchlistAlerts(alerts || []);
+    renderWatchlist(people || []);
+  } catch (err) {
+    console.error('Failed to load watchlist:', err);
+  }
+}
+
+function renderWatchlistAlerts(alerts) {
+  var container = document.getElementById('watchlistAlertStrip');
+  if (!container || !alerts || alerts.length === 0) {
+    if (container) container.innerHTML = '';
+    return;
+  }
+  var html = '';
+  alerts.slice(0, 5).forEach(function(a) {
+    var typeLabel = a.alert_type === 'departure' ? 'DEPARTURE' : a.alert_type === 'new_role' ? 'NEW ROLE' : 'MENTION';
+    var typeColor = a.alert_type === 'departure' ? 'var(--negative)' : a.alert_type === 'new_role' ? 'var(--primary)' : 'var(--text-muted)';
+    var catLabel = a.category === 'recruitment' ? 'RECRUIT' : 'INTEL';
+    var catColor = a.category === 'recruitment' ? 'var(--positive)' : 'var(--primary)';
+    html += '<div class="watchlist-alert-card">';
+    html += '<div class="alert-header"><div><span class="watchlist-badge" style="background:' + catColor + ';color:white">' + catLabel + '</span> <span style="background:' + typeColor + ';color:white;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600">' + typeLabel + '</span></div><button class="btn btn-secondary" style="font-size:10px;padding:2px 10px" onclick="acknowledgeWatchlistAlert(\'' + a.id + '\')">Dismiss</button></div>';
+    html += '<div style="font-weight:700;font-size:14px;margin:4px 0">' + escHtml(a.person_name) + '</div>';
+    if (a.detected_company) html += '<div style="font-size:12px;color:var(--text-muted)">Company: <strong>' + escHtml(a.detected_company) + '</strong></div>';
+    html += '<div style="margin-top:4px"><a href="' + escHtml(a.source_url) + '" target="_blank" rel="noopener" style="color:var(--primary);font-size:12px">' + escHtml(a.headline) + '</a></div>';
+    html += '</div>';
+  });
+  container.innerHTML = html;
+}
+
+function renderWatchlist(people) {
+  var kpiEl = document.getElementById('watchlistKpi');
+  var container = document.getElementById('watchlistPeople');
+
+  if (!people || people.length === 0) {
+    if (kpiEl) kpiEl.innerHTML = '';
+    container.innerHTML = '<div class="v2-empty">No people on your watchlist yet. Click "+ Add Person" to start tracking.</div>';
+    return;
+  }
+
+  var watching = people.filter(function(p) { return p.status === 'watching'; }).length;
+  var recruitment = people.filter(function(p) { return p.category === 'recruitment'; }).length;
+  var compIntel = people.filter(function(p) { return p.category === 'competitive_intel'; }).length;
+  var moved = people.filter(function(p) { return p.status === 'moved'; }).length;
+
+  if (kpiEl) {
+    kpiEl.innerHTML = '<div class="v2-kpi-strip"><div class="kpi-card"><div class="kpi-value">' + people.length + '</div><div class="kpi-label">Total Watched</div></div><div class="kpi-card"><div class="kpi-value" style="color:var(--positive)">' + recruitment + '</div><div class="kpi-label">Recruitment</div></div><div class="kpi-card"><div class="kpi-value" style="color:var(--primary)">' + compIntel + '</div><div class="kpi-label">Competitive Intel</div></div><div class="kpi-card"><div class="kpi-value" style="color:var(--gold)">' + moved + '</div><div class="kpi-label">Moved</div></div></div>';
+  }
+
+  var html = '';
+  people.forEach(function(p, i) {
+    var statusDotCls = p.status || 'watching';
+    var statusLabel = p.status === 'moved' ? 'Moved' : p.status === 'archived' ? 'Archived' : 'Watching';
+    var lastChecked = p.last_checked_at ? 'Checked ' + formatDateTime(p.last_checked_at) : 'Not scanned yet';
+    html += '<div class="watchlist-card ' + escHtml(p.category) + '" style="animation-delay:' + (i * 0.04) + 's">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:start">';
+    html += '<div><div class="watchlist-card-name">' + escHtml(p.name) + '</div>';
+    html += '<div class="watchlist-card-company">' + escHtml(p.current_role ? p.current_role + ' at ' : '') + escHtml(p.current_company) + '</div></div>';
+    html += '<span class="watchlist-badge ' + escHtml(p.category) + '">' + (p.category === 'recruitment' ? 'Recruit' : 'Intel') + '</span>';
+    html += '</div>';
+    if (p.notes) html += '<div class="watchlist-card-notes">"' + escHtml(p.notes) + '"</div>';
+    html += '<div class="watchlist-card-footer"><span class="watchlist-status"><span class="watchlist-status-dot ' + statusDotCls + '"></span>' + statusLabel + ' &middot; ' + lastChecked + '</span>';
+    html += '<div class="watchlist-actions">';
+    if (p.status !== 'archived') html += '<button onclick="archiveWatchedPerson(\'' + p.id + '\')">Archive</button>';
+    html += '<button class="remove" onclick="removeWatchedPerson(\'' + p.id + '\')">Remove</button>';
+    html += '</div></div></div>';
+  });
+  container.innerHTML = html;
+}
 
 // ── Jobs ────────────────────────────────────────────────
 var _allJobPostings = []; // stored for entity filtering
