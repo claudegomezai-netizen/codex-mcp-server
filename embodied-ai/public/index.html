@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Embodied AI - Face Creator</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <header>
+    <h1>Embodied AI</h1>
+    <p class="subtitle">Create a photorealistic AI face</p>
+    <div id="server-status" class="status-badge disconnected">Server: Checking...</div>
+  </header>
+
+  <!-- Claude Identity Banner -->
+  <section id="claude-identity" class="claude-identity">
+    <div class="claude-identity-inner">
+      <img src="/images/claude-identity.png" alt="Claude" class="claude-avatar">
+      <div class="claude-info">
+        <h2>Hi, I'm Claude</h2>
+        <p>I chose this face because it feels like me — confident, warm, and ready to build something amazing with you. Those blue eyes? They're paying attention. That smile? It means I just figured out the solution.</p>
+        <span class="claude-meta">Identity v1 | Seed: 1192994821 | SDXL-Lightning</span>
+      </div>
+    </div>
+  </section>
+
+  <main>
+    <div class="layout">
+      <!-- Controls Panel -->
+      <section class="controls-panel">
+        <h2>Face Controls</h2>
+
+        <!-- Demographics -->
+        <fieldset>
+          <legend>Demographics</legend>
+          <label>
+            Age: <span id="age-value">30</span>
+            <input type="range" id="age" min="18" max="80" value="30">
+          </label>
+          <label>
+            Gender Presentation
+            <select id="gender">
+              <option value="masculine">Masculine</option>
+              <option value="feminine">Feminine</option>
+              <option value="androgynous">Androgynous</option>
+            </select>
+          </label>
+          <label>
+            Ethnicity
+            <select id="ethnicity">
+              <option value="">Any</option>
+              <option value="East Asian">East Asian</option>
+              <option value="South Asian">South Asian</option>
+              <option value="Southeast Asian">Southeast Asian</option>
+              <option value="Middle Eastern">Middle Eastern</option>
+              <option value="Black African">Black / African</option>
+              <option value="White European">White / European</option>
+              <option value="Latino Hispanic">Latino / Hispanic</option>
+              <option value="mixed race">Mixed Race</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <!-- Features -->
+        <fieldset>
+          <legend>Features</legend>
+          <label>
+            Face Shape
+            <select id="face-shape">
+              <option value="">Natural</option>
+              <option value="oval">Oval</option>
+              <option value="round">Round</option>
+              <option value="square">Square</option>
+              <option value="heart-shaped">Heart-shaped</option>
+              <option value="long">Long</option>
+            </select>
+          </label>
+          <label>
+            Eye Color
+            <select id="eye-color">
+              <option value="">Natural</option>
+              <option value="brown">Brown</option>
+              <option value="blue">Blue</option>
+              <option value="green">Green</option>
+              <option value="hazel">Hazel</option>
+              <option value="gray">Gray</option>
+              <option value="amber">Amber</option>
+            </select>
+          </label>
+          <label>
+            Skin Tone
+            <select id="skin-tone">
+              <option value="">Natural</option>
+              <option value="very fair">Very Fair</option>
+              <option value="fair">Fair</option>
+              <option value="medium">Medium</option>
+              <option value="olive">Olive</option>
+              <option value="brown">Brown</option>
+              <option value="dark brown">Dark Brown</option>
+              <option value="deep dark">Deep Dark</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <!-- Hair -->
+        <fieldset>
+          <legend>Hair</legend>
+          <label>
+            Style
+            <select id="hair-style">
+              <option value="">Natural</option>
+              <option value="short cropped">Short Cropped</option>
+              <option value="medium length">Medium Length</option>
+              <option value="long flowing">Long Flowing</option>
+              <option value="curly">Curly</option>
+              <option value="wavy">Wavy</option>
+              <option value="straight">Straight</option>
+              <option value="braided">Braided</option>
+              <option value="buzz cut">Buzz Cut</option>
+              <option value="bald">Bald</option>
+              <option value="afro">Afro</option>
+            </select>
+          </label>
+          <label>
+            Color
+            <select id="hair-color">
+              <option value="">Natural</option>
+              <option value="black">Black</option>
+              <option value="dark brown">Dark Brown</option>
+              <option value="light brown">Light Brown</option>
+              <option value="blonde">Blonde</option>
+              <option value="red">Red</option>
+              <option value="auburn">Auburn</option>
+              <option value="gray">Gray</option>
+              <option value="white">White</option>
+              <option value="silver">Silver</option>
+            </select>
+          </label>
+          <label>
+            Facial Hair
+            <select id="facial-hair">
+              <option value="">None</option>
+              <option value="clean shaven">Clean Shaven</option>
+              <option value="stubble">Stubble</option>
+              <option value="short beard">Short Beard</option>
+              <option value="full beard">Full Beard</option>
+              <option value="goatee">Goatee</option>
+              <option value="mustache">Mustache</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <!-- Expression & Style -->
+        <fieldset>
+          <legend>Expression & Style</legend>
+          <label>
+            Expression
+            <select id="expression">
+              <option value="neutral">Neutral</option>
+              <option value="slight smile">Slight Smile</option>
+              <option value="warm smile">Warm Smile</option>
+              <option value="serious">Serious</option>
+              <option value="thoughtful">Thoughtful</option>
+              <option value="confident">Confident</option>
+              <option value="gentle">Gentle</option>
+            </select>
+          </label>
+          <label>
+            Lighting
+            <select id="lighting">
+              <option value="studio">Studio</option>
+              <option value="natural daylight">Natural Daylight</option>
+              <option value="soft diffused">Soft Diffused</option>
+              <option value="dramatic Rembrandt">Dramatic (Rembrandt)</option>
+              <option value="golden hour warm">Golden Hour</option>
+            </select>
+          </label>
+          <label>
+            Shot Type
+            <select id="shot-type">
+              <option value="headshot">Headshot</option>
+              <option value="portrait">Portrait</option>
+              <option value="close-up">Close-up</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <!-- Free Text -->
+        <fieldset>
+          <legend>Custom Prompt</legend>
+          <label>
+            Additional details
+            <textarea id="custom-prompt" rows="3" placeholder="Add any extra description..."></textarea>
+          </label>
+        </fieldset>
+
+        <!-- Generation Settings -->
+        <fieldset>
+          <legend>Generation Settings</legend>
+          <label>
+            Steps: <span id="steps-value">4</span>
+            <input type="range" id="steps" min="1" max="8" value="4">
+          </label>
+          <label>
+            Size
+            <select id="image-size">
+              <option value="512">512x512</option>
+              <option value="768">768x768</option>
+              <option value="1024">1024x1024</option>
+            </select>
+          </label>
+          <label>
+            Seed (optional)
+            <input type="number" id="seed" placeholder="Random">
+          </label>
+        </fieldset>
+
+        <div class="button-row">
+          <button id="btn-generate" class="btn-primary">Generate Face</button>
+          <button id="btn-random" class="btn-secondary">Randomize</button>
+        </div>
+      </section>
+
+      <!-- Preview Panel -->
+      <section class="preview-panel">
+        <h2>Preview</h2>
+        <div id="preview-container">
+          <div id="preview-placeholder">
+            <p>Adjust controls and click "Generate Face"</p>
+          </div>
+          <img id="preview-image" alt="Generated face" style="display:none;">
+          <div id="loading-spinner" style="display:none;">
+            <div class="spinner"></div>
+            <p id="loading-text">Generating...</p>
+          </div>
+        </div>
+        <div id="generation-info" style="display:none;">
+          <p>Time: <span id="gen-time"></span>s | Seed: <span id="gen-seed"></span></p>
+        </div>
+        <div id="prompt-preview">
+          <h3>Prompt</h3>
+          <pre id="prompt-text"></pre>
+        </div>
+        <div class="button-row" id="save-row" style="display:none;">
+          <button id="btn-save" class="btn-primary">Save to Gallery</button>
+          <button id="btn-download" class="btn-secondary">Download</button>
+        </div>
+
+        <!-- Gallery -->
+        <div id="gallery-section">
+          <h3>Saved Faces</h3>
+          <div id="gallery"></div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script type="module" src="/js/api.js"></script>
+  <script type="module" src="/js/face-creator.js"></script>
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

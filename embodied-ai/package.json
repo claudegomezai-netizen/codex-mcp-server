@@ -1,0 +1,17 @@
+{
+  "name": "embodied-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Embodied AI - Claude gets a face, voice, eyes, and ears",
+  "scripts": {
+    "dev": "netlify dev",
+    "server": "cd server && python server.py"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0",
+    "@netlify/functions": "^2.8.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}
