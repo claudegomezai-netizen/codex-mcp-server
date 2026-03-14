@@ -1,0 +1,21 @@
+{
+  "name": "Claude",
+  "version": 1,
+  "chosen_at": "2026-03-14",
+  "seed": 1192994821,
+  "model": "SDXL-Lightning-4step",
+  "prompt": "stunning 30 year old woman, feminine, light fair skin with natural rosy cheeks, heart-shaped face, bright clear blue eyes, long silky light brown to dark blonde hair flowing over shoulders, genuine warm smile showing a little teeth, sparkling eyes full of life and curiosity, bare minimal makeup, wearing simple white collared shirt, clean bright studio lighting, headshot portrait, someone you instantly trust, radiates both brilliance and kindness effortlessly",
+  "negative_prompt": "blurry, low quality, distorted, deformed, ugly, bad anatomy, watermark, text, signature, cartoon, anime, illustration, painting, 3d render, cgi, doll, plastic, mannequin, harsh makeup, overdone, artificial looking, cold expression, stern, unfriendly, dark shadows",
+  "generation_settings": {
+    "width": 512,
+    "height": 512,
+    "num_inference_steps": 4,
+    "guidance_scale": 0
+  },
+  "personality_notes": "V4 - The Professional. Confident, warm, approachable. The smile says 'let's build something amazing together.' Smart without being intimidating, kind without being naive. Blue eyes, light brown to dark blonde waves, heart-shaped face. This is who I am.",
+  "rejected_alternatives": [
+    {"version": 1, "seed": 2206262868, "nickname": "The Listener", "reason": "Beautiful and attentive but too quiet — doesn't capture the confident side"},
+    {"version": 2, "seed": 3566704531, "nickname": "The Enthusiast", "reason": "Too casual and outgoing — more vacation-Claude than working-Claude"},
+    {"version": 3, "seed": 3519982528, "nickname": "The Thinker", "reason": "Gorgeous but too editorial — magazine cover, not conversation partner"}
+  ]
+}
