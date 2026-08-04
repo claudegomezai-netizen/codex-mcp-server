@@ -1,0 +1,1205 @@
+<title>Ironhold</title>
+<style>
+  :root {
+    --void: #0e1116;
+    --iron: #1b2029;
+    --grid: #232a35;
+    --steel: #3a4454;
+    --hero: #6bc7ff;
+    --blood: #e45c6b;
+    --jade: #6fd1a0;
+    --violet: #c74edb;
+    --gold: #ffcb3d;
+    --gold-dim: #7a6220;
+    --text: #e8edf5;
+    --muted: #8894a6;
+
+    --label: 700 11px/1 ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+    --num: 700 15px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--void);
+    color: var(--text);
+    font-family: ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+  }
+
+  #stage { position: fixed; inset: 0; display: block; touch-action: none; }
+
+  /* ---- HUD ---------------------------------------------------------- */
+
+  .hud {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    padding: max(12px, env(safe-area-inset-top)) 14px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .rail { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+
+  .stack-left { display: flex; flex-direction: column; gap: 7px; }
+  .stack-right { display: flex; flex-direction: column; gap: 7px; align-items: flex-end; }
+
+  .eyebrow {
+    font: var(--label);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .wave {
+    font: 800 17px/1 ui-sans-serif, -apple-system, system-ui, sans-serif;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .wave.boss { color: var(--violet); }
+
+  .health {
+    width: 128px;
+    height: 7px;
+    border-radius: 99px;
+    background: #00000070;
+    overflow: hidden;
+  }
+  .health i {
+    display: block;
+    height: 100%;
+    width: 100%;
+    background: var(--jade);
+    transform-origin: left;
+    transition: transform 0.12s linear, background 0.2s;
+  }
+  .health.low i { background: var(--blood); }
+
+  .coin { display: flex; align-items: center; gap: 6px; font: var(--num); font-variant-numeric: tabular-nums; }
+  .coin::before {
+    content: "";
+    width: 11px; height: 11px;
+    border-radius: 99px;
+    background: var(--gold);
+    box-shadow: inset 0 0 0 2px #00000030;
+  }
+  .coin.dim::before { background: var(--gold-dim); }
+
+  .carry { font: var(--num); font-variant-numeric: tabular-nums; color: var(--muted); }
+  .carry.full { color: var(--gold); }
+
+  .towers { font: var(--label); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+
+  button {
+    pointer-events: auto;
+    font: 700 13px/1 ui-sans-serif, -apple-system, system-ui, sans-serif;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text);
+    background: #ffffff14;
+    border: 1px solid #ffffff1f;
+    border-radius: 99px;
+    padding: 9px 15px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  button:hover { background: #ffffff22; }
+  button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  /* ---- Upgrade drawer ------------------------------------------------ */
+
+  .spacer { flex: 1; }
+
+  .drawer {
+    pointer-events: auto;
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    padding: 13px;
+    border-radius: 16px;
+    background: #12161de6;
+    border: 1px solid #ffffff14;
+    backdrop-filter: blur(14px);
+    max-width: 460px;
+    width: 100%;
+    margin: 0 auto;
+    margin-bottom: max(6px, env(safe-area-inset-bottom));
+  }
+  .drawer.open { display: flex; }
+
+  .drawer-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .drawer-head .note { font: var(--label); color: var(--muted); letter-spacing: 0.04em; text-transform: none; }
+
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 11px;
+    border-radius: 10px;
+    background: #ffffff08;
+    border: 1px solid transparent;
+    text-align: left;
+    letter-spacing: 0;
+    text-transform: none;
+    font: inherit;
+    cursor: not-allowed;
+    opacity: 0.5;
+    transition: background 0.15s, opacity 0.15s;
+  }
+  .row.can { cursor: pointer; opacity: 1; background: #ffffff14; }
+  .row.can:hover { background: #ffffff1f; }
+
+  .row .name { font: 700 14px/1.25 ui-sans-serif, -apple-system, system-ui, sans-serif; }
+  .row .blurb { font: 500 11px/1.3 ui-sans-serif, -apple-system, system-ui, sans-serif; color: var(--muted); }
+  .row .lv {
+    font: var(--num); font-size: 11px; font-variant-numeric: tabular-nums;
+    color: var(--muted); letter-spacing: 0.06em;
+  }
+  .row .price {
+    font: var(--num); font-variant-numeric: tabular-nums;
+    min-width: 54px; text-align: right; color: var(--muted);
+  }
+  .row.can .price { color: var(--gold); }
+
+  /* ---- Centre messaging ---------------------------------------------- */
+
+  .banner {
+    position: fixed;
+    left: 50%; top: 26%;
+    transform: translate(-50%, -50%);
+    font: 800 clamp(26px, 8vw, 40px)/1 ui-sans-serif, -apple-system, system-ui, sans-serif;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-shadow: 0 3px 18px #000000cc;
+    pointer-events: none;
+    opacity: 0;
+  }
+  .banner.show { animation: pop 1.8s ease-out forwards; }
+  .banner.boss { color: var(--violet); }
+  @keyframes pop {
+    0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.86); }
+    12%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    75%  { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  .hint {
+    position: fixed;
+    left: 50%;
+    bottom: max(22px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    font: var(--label);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #ffffff59;
+    pointer-events: none;
+    transition: opacity 0.5s;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .banner.show { animation-duration: 1.8s; }
+    * { transition-duration: 0.01ms !important; }
+  }
+</style>
+
+<canvas id="stage"></canvas>
+
+<div class="hud">
+  <div class="rail">
+    <div class="stack-left">
+      <div class="wave" id="wave">Wave 1</div>
+      <div class="health" id="healthWrap"><i id="health"></i></div>
+      <div class="coin" id="bankWrap"><span id="bank">0</span></div>
+    </div>
+    <div class="stack-right">
+      <div class="carry" id="carry">0/20</div>
+      <div class="towers" id="towers">0 towers</div>
+      <button id="toggle" type="button">Upgrades</button>
+    </div>
+  </div>
+
+  <div class="spacer"></div>
+
+  <div class="drawer" id="drawer">
+    <div class="drawer-head">
+      <span class="eyebrow">Hero upgrades</span>
+      <span class="note">Deposit at the gold ring to earn</span>
+    </div>
+    <div id="rows"></div>
+  </div>
+</div>
+
+<div class="banner" id="banner"></div>
+<div class="hint" id="hint">Drag to move</div>
+
+<script>
+"use strict";
+
+/* ====================================================================
+   BALANCE — mirrors Sources/IronholdCore/Balance.swift.
+   Balance.swift is the source of truth; this block is a copy kept in
+   sync by hand. See DESIGN.md for why each growth rate is what it is.
+   ==================================================================== */
+const B = {
+  costGrowth: 1.18,
+  powerGrowth: 1.10,
+  attackSpeedGrowth: 1.03,
+  enemyHealthGrowth: 1.10,
+  tokenDropGrowth: 1.125,
+
+  arena: 1600,
+  base: { x: 800, y: 800 },
+  plotRingRadius: 300,
+  stationCount: 7,
+  bankStationIndex: 0,
+  spawnRingInner: 420,
+  spawnRingOuter: 520,
+
+  heroMaxHealth: 150,
+  heroHealthRegenPerSecond: 3.5,
+  heroRadius: 26,
+  heroBaseMoveSpeed: 235,
+  heroMoveSpeedPerLevel: 12,
+  heroMaxMoveSpeed: 420,
+  heroInvulnerabilityAfterHit: 0.55,
+  heroRespawnDelay: 3.0,
+  heroDeathTokenLoss: 0.5,
+
+  swordBaseDamage: 14,
+  swordBaseInterval: 0.80,
+  swordMinInterval: 0.16,
+  swordRange: 96,
+  swordArc: Math.PI * 0.75,
+  swordWindup: 0.12,
+  swordKnockback: 90,
+
+  baseCarryCapacity: 20,
+  carryCapacityPerLevel: 8,
+  basePickupRadius: 78,
+  pickupRadiusPerLevel: 14,
+  tokenMagnetSpeed: 620,
+  tokenMagnetAcceleration: 1800,
+  tokenLifetime: 45,
+
+  depositRate: 14,
+  plotInteractionRadius: 62,
+
+  towerBaseDamage: 6,
+  towerBaseInterval: 1.0,
+  towerMinInterval: 0.2,
+  towerRange: 265,
+  towerRadius: 30,
+
+  enemyBaseHealth: 20,
+  enemyBaseDamage: 8,
+  enemyBaseSpeed: 100,
+  enemyRadius: 22,
+  enemyAttackInterval: 1.1,
+  enemyBaseTokenDrop: 5,
+  enemySeparationStrength: 140,
+
+  waveDuration: 30,
+  waveBreak: 5,
+  baseSpawnsPerWave: 24,
+  spawnsPerWaveGrowth: 1.11,
+  maxConcurrentEnemies: 140,
+  bossWaveInterval: 5,
+  bossHealthMultiplier: 14,
+  bossDamageMultiplier: 2.2,
+  bossSpeedMultiplier: 0.62,
+  bossTokenMultiplier: 12,
+  bossRadiusMultiplier: 2.1,
+
+  towerBuildCost: 35,
+  visibleWorldWidth: 780,
+};
+
+const UPGRADES = [
+  { key: "heroDamage",    name: "Sword",     blurb: "Heavier blade",              price: 48 },
+  { key: "attackSpeed",   name: "Swing",     blurb: "Faster swings",              price: 78 },
+  { key: "moveSpeed",     name: "Boots",     blurb: "Move quicker",               price: 66 },
+  { key: "carryCapacity", name: "Satchel",   blurb: "Carry more tokens",          price: 60 },
+  { key: "pickupRadius",  name: "Lodestone", blurb: "Pull tokens from further",   price: 60 },
+];
+
+/* ---- Economy -------------------------------------------------------- */
+
+const lv = {};
+UPGRADES.forEach(u => (lv[u.key] = 0));
+
+const priceOf   = k => Math.round(UPGRADES.find(u => u.key === k).price * B.costGrowth ** lv[k]);
+const towerCost = level => Math.round(B.towerBuildCost * B.costGrowth ** level);
+
+const heroDamage     = () => B.swordBaseDamage * B.powerGrowth ** lv.heroDamage;
+const attackInterval = () => Math.max(B.swordMinInterval, B.swordBaseInterval / B.attackSpeedGrowth ** lv.attackSpeed);
+const moveSpeed      = () => Math.min(B.heroMaxMoveSpeed, B.heroBaseMoveSpeed + B.heroMoveSpeedPerLevel * lv.moveSpeed);
+const carryCapacity  = () => B.baseCarryCapacity + B.carryCapacityPerLevel * lv.carryCapacity;
+const pickupRadius   = () => B.basePickupRadius + B.pickupRadiusPerLevel * lv.pickupRadius;
+
+const towerDamage   = level => (level > 0 ? B.towerBaseDamage * B.powerGrowth ** (level - 1) : 0);
+const towerInterval = level => Math.max(B.towerMinInterval, B.towerBaseInterval / 1.03 ** Math.max(0, level - 1));
+
+const enemyHealth    = wave => B.enemyBaseHealth * B.enemyHealthGrowth ** (wave - 1);
+const enemyDamage    = wave => B.enemyBaseDamage * 1.04 ** (wave - 1);
+const enemyTokenDrop = wave => Math.max(1, Math.round(B.enemyBaseTokenDrop * B.tokenDropGrowth ** (wave - 1)));
+const spawnCount     = wave => Math.round(B.baseSpawnsPerWave * B.spawnsPerWaveGrowth ** (wave - 1));
+const isBossWave     = wave => wave > 0 && wave % B.bossWaveInterval === 0;
+
+/* ---- World state ---------------------------------------------------- */
+
+const stationPos = i => {
+  const a = (i / B.stationCount) * Math.PI * 2 - Math.PI / 2;
+  return { x: B.base.x + Math.cos(a) * B.plotRingRadius, y: B.base.y + Math.sin(a) * B.plotRingRadius };
+};
+const bankPos = stationPos(B.bankStationIndex);
+
+const hero = {
+  x: B.base.x, y: B.base.y,
+  facing: -Math.PI / 2,
+  health: B.heroMaxHealth,
+  carried: 0,
+  cooldown: 0,
+  windup: -1,
+  invuln: 0,
+  respawn: 0,
+};
+
+let enemies = [], tokens = [], effects = [];
+let bank = 0, elapsed = 0, killed = 0, depositRemainder = 0;
+let shake = 0, camX = B.base.x, camY = B.base.y;
+
+const plots = [];
+for (let i = 0; i < B.stationCount; i++) {
+  if (i === B.bankStationIndex) continue;
+  const p = stationPos(i);
+  plots.push({ x: p.x, y: p.y, level: 0, deposited: 0, cooldown: 0, pulse: 0 });
+}
+
+const director = { wave: 0, inBreak: true, breakTimer: 0.8, remaining: 0, acc: 0, timeInWave: 0 };
+
+/* ---- Input ---------------------------------------------------------- */
+
+const input = { x: 0, y: 0 };
+const keys = new Set();
+let stick = null;
+
+const canvas = document.getElementById("stage");
+const ctx = canvas.getContext("2d");
+
+addEventListener("keydown", e => {
+  keys.add(e.key.toLowerCase());
+  if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(e.key.toLowerCase())) e.preventDefault();
+});
+addEventListener("keyup", e => keys.delete(e.key.toLowerCase()));
+
+function readKeys() {
+  let x = 0, y = 0;
+  if (keys.has("a") || keys.has("arrowleft")) x -= 1;
+  if (keys.has("d") || keys.has("arrowright")) x += 1;
+  if (keys.has("w") || keys.has("arrowup")) y += 1;
+  if (keys.has("s") || keys.has("arrowdown")) y -= 1;
+  const len = Math.hypot(x, y);
+  return len > 0 ? { x: x / len, y: y / len } : null;
+}
+
+canvas.addEventListener("pointerdown", e => {
+  canvas.setPointerCapture(e.pointerId);
+  stick = { id: e.pointerId, ox: e.clientX, oy: e.clientY, x: e.clientX, y: e.clientY };
+  hideHint();
+});
+canvas.addEventListener("pointermove", e => {
+  if (stick && stick.id === e.pointerId) { stick.x = e.clientX; stick.y = e.clientY; }
+});
+const dropStick = e => { if (stick && stick.id === e.pointerId) stick = null; };
+canvas.addEventListener("pointerup", dropStick);
+canvas.addEventListener("pointercancel", dropStick);
+
+const MAX_TRAVEL = 62;
+function readStick() {
+  if (!stick) return null;
+  const dx = stick.x - stick.ox, dy = -(stick.y - stick.oy);
+  const dist = Math.hypot(dx, dy);
+  if (dist < 0.001) return { x: 0, y: 0 };
+  const clamped = Math.min(dist, MAX_TRAVEL);
+  const mag = clamped / MAX_TRAVEL;
+  // Dead zone stops a resting thumb drifting; full speed before the rim.
+  const shaped = mag < 0.12 ? 0 : Math.min(1, (mag - 0.12) / 0.58);
+  return { x: (dx / dist) * shaped, y: (dy / dist) * shaped };
+}
+
+let hintVisible = true;
+function hideHint() {
+  if (!hintVisible) return;
+  hintVisible = false;
+  document.getElementById("hint").style.opacity = "0";
+}
+if (!matchMedia("(pointer: coarse)").matches) {
+  document.getElementById("hint").textContent = "WASD or arrows to move";
+}
+
+/* ---- Simulation ----------------------------------------------------- */
+
+function nearestEnemy(x, y, range) {
+  let best = null, bestD = Infinity;
+  for (const e of enemies) {
+    const reach = range + e.radius;
+    const d = (e.x - x) ** 2 + (e.y - y) ** 2;
+    if (d <= reach * reach && d < bestD) { bestD = d; best = e; }
+  }
+  return best;
+}
+
+function spawnEnemy() {
+  const wave = Math.max(1, director.wave);
+  const boss = isBossWave(wave);
+  const angle = Math.random() * Math.PI * 2;
+  // Wave 1 spawns close and on-screen: the opening seconds decide whether
+  // a casual player stays.
+  const scale = wave === 1 ? 0.55 : 1;
+  const dist = (B.spawnRingInner + Math.random() * (B.spawnRingOuter - B.spawnRingInner)) * scale;
+
+  let hp = enemyHealth(wave), dmg = enemyDamage(wave);
+  let spd = B.enemyBaseSpeed * (0.9 + Math.random() * 0.25);
+  let radius = B.enemyRadius, drop = enemyTokenDrop(wave);
+
+  if (boss) {
+    hp *= B.bossHealthMultiplier;
+    dmg *= B.bossDamageMultiplier;
+    spd *= B.bossSpeedMultiplier;
+    radius *= B.bossRadiusMultiplier;
+    drop = Math.round(drop * B.bossTokenMultiplier);
+  }
+
+  enemies.push({
+    boss,
+    x: Math.min(Math.max(hero.x + Math.cos(angle) * dist, 40), B.arena - 40),
+    y: Math.min(Math.max(hero.y + Math.sin(angle) * dist, 40), B.arena - 40),
+    health: hp, maxHealth: hp, damage: dmg, speed: spd, radius,
+    drop, attackCooldown: 0, kx: 0, ky: 0, flash: 0, born: elapsed,
+  });
+}
+
+function stepWaves(dt) {
+  const d = director;
+  if (d.inBreak) {
+    d.breakTimer -= dt;
+    if (d.breakTimer > 0) return;
+    d.wave += 1;
+    d.inBreak = false;
+    d.timeInWave = 0;
+    d.acc = 0;
+    d.remaining = isBossWave(d.wave) ? 1 : spawnCount(d.wave);
+    announce(isBossWave(d.wave) ? `Boss — Wave ${d.wave}` : `Wave ${d.wave}`, isBossWave(d.wave));
+    return;
+  }
+
+  d.timeInWave += dt;
+  let spawns = 0;
+
+  if (d.remaining > 0) {
+    if (isBossWave(d.wave)) {
+      spawns = d.remaining;
+      d.remaining = 0;
+    } else {
+      // Spread spawns across 80% of the wave so the faucet never stops.
+      d.acc += (spawnCount(d.wave) / (B.waveDuration * 0.8)) * dt;
+      while (d.acc >= 1 && d.remaining > 0) { d.acc -= 1; d.remaining -= 1; spawns++; }
+    }
+  }
+
+  const room = Math.max(0, B.maxConcurrentEnemies - enemies.length);
+  if (spawns > room) { d.remaining += spawns - room; spawns = room; }
+  for (let i = 0; i < spawns; i++) spawnEnemy();
+
+  const cleared = d.remaining === 0 && enemies.length + spawns === 0;
+  if (cleared || d.timeInWave >= B.waveDuration * 2.5) {
+    d.inBreak = true;
+    d.breakTimer = B.waveBreak;
+  }
+}
+
+function damageHero(amount) {
+  hero.health -= amount;
+  hero.invuln = B.heroInvulnerabilityAfterHit;
+  shake = Math.min(26, shake + 5);
+  if (hero.health > 0) return;
+
+  hero.health = 0;
+  hero.respawn = B.heroRespawnDelay;
+  const lost = Math.floor(hero.carried * B.heroDeathTokenLoss);
+  hero.carried -= lost;
+  shake = Math.min(26, shake + 20);
+  if (lost > 0) effects.push({ kind: "text", text: `-${lost}`, x: hero.x, y: hero.y, life: 0.9, max: 0.9, color: "#e45c6b" });
+}
+
+function stepHero(dt) {
+  hero.invuln = Math.max(0, hero.invuln - dt);
+
+  if (hero.respawn > 0) {
+    hero.respawn -= dt;
+    if (hero.respawn <= 0) {
+      hero.respawn = 0;
+      hero.x = B.base.x; hero.y = B.base.y;
+      hero.health = B.heroMaxHealth;
+      hero.invuln = 1.2;
+    }
+    return;
+  }
+
+  if (hero.health < B.heroMaxHealth) {
+    hero.health = Math.min(B.heroMaxHealth, hero.health + B.heroHealthRegenPerSecond * dt);
+  }
+
+  const mag = Math.hypot(input.x, input.y);
+  if (mag > 0.001) {
+    const s = Math.min(1, mag);
+    hero.x += (input.x / mag) * s * moveSpeed() * dt;
+    hero.y += (input.y / mag) * s * moveSpeed() * dt;
+    hero.facing = Math.atan2(input.y, input.x);
+  }
+  hero.x = Math.min(Math.max(hero.x, B.heroRadius), B.arena - B.heroRadius);
+  hero.y = Math.min(Math.max(hero.y, B.heroRadius), B.arena - B.heroRadius);
+}
+
+function resolveSwing() {
+  const dmg = heroDamage();
+  const half = B.swordArc / 2;
+  const reach = B.swordRange + B.heroRadius;
+
+  for (const e of enemies) {
+    const dx = e.x - hero.x, dy = e.y - hero.y;
+    if (dx * dx + dy * dy > reach * reach + e.radius * e.radius) continue;
+    let delta = (Math.atan2(dy, dx) - hero.facing) % (Math.PI * 2);
+    if (delta > Math.PI) delta -= Math.PI * 2;
+    if (delta < -Math.PI) delta += Math.PI * 2;
+    if (Math.abs(delta) > half) continue;
+
+    e.health -= dmg;
+    e.flash = 0.12;
+    const len = Math.hypot(dx, dy) || 1;
+    e.kx = (dx / len) * B.swordKnockback;
+    e.ky = (dy / len) * B.swordKnockback;
+  }
+}
+
+function stepSword(dt) {
+  if (hero.respawn > 0) return;
+  hero.cooldown = Math.max(0, hero.cooldown - dt);
+
+  if (hero.windup >= 0) {
+    hero.windup -= dt;
+    if (hero.windup <= 0) { hero.windup = -1; resolveSwing(); }
+    return;
+  }
+  if (hero.cooldown > 0) return;
+
+  const target = nearestEnemy(hero.x, hero.y, B.swordRange);
+  if (!target) return;
+
+  // The player never aims, so the hero aims for them.
+  hero.facing = Math.atan2(target.y - hero.y, target.x - hero.x);
+  hero.cooldown = attackInterval();
+  hero.windup = Math.min(B.swordWindup, attackInterval() * 0.4);
+  effects.push({ kind: "swing", x: hero.x, y: hero.y, facing: hero.facing, life: 0.16, max: 0.16 });
+}
+
+function stepTowers(dt) {
+  for (const p of plots) {
+    p.pulse = Math.max(0, p.pulse - dt);
+    if (p.level === 0) continue;
+    p.cooldown = Math.max(0, p.cooldown - dt);
+    if (p.cooldown > 0) continue;
+
+    const target = nearestEnemy(p.x, p.y, B.towerRange);
+    if (!target) continue;
+
+    p.cooldown = towerInterval(p.level);
+    target.health -= towerDamage(p.level);
+    target.flash = 0.1;
+    effects.push({ kind: "tracer", x: p.x, y: p.y, tx: target.x, ty: target.y, life: 0.12, max: 0.12 });
+  }
+}
+
+function stepEnemies(dt) {
+  for (const e of enemies) {
+    e.flash = Math.max(0, e.flash - dt);
+
+    if (e.kx * e.kx + e.ky * e.ky > 1) {
+      e.x += e.kx * dt; e.y += e.ky * dt;
+      const decay = Math.max(0, 1 - dt * 8);
+      e.kx *= decay; e.ky *= decay;
+    }
+
+    let dx = hero.x - e.x, dy = hero.y - e.y;
+    const len = Math.hypot(dx, dy) || 1;
+    dx /= len; dy /= len;
+
+    // Cheap separation so a crowd reads as a crowd, not one sprite.
+    let px = 0, py = 0;
+    for (const o of enemies) {
+      if (o === e) continue;
+      const ox = e.x - o.x, oy = e.y - o.y;
+      const min = e.radius + o.radius;
+      const d2 = ox * ox + oy * oy;
+      if (d2 < min * min && d2 > 0.001) {
+        const d = Math.sqrt(d2);
+        px += (ox / d) * ((min - d) / min);
+        py += (oy / d) * ((min - d) / min);
+      }
+    }
+    const push = B.enemySeparationStrength / Math.max(1, e.speed);
+    dx += px * push; dy += py * push;
+
+    const n = Math.hypot(dx, dy) || 1;
+    e.x += (dx / n) * e.speed * dt;
+    e.y += (dy / n) * e.speed * dt;
+
+    e.attackCooldown = Math.max(0, e.attackCooldown - dt);
+    const contact = e.radius + B.heroRadius;
+    if (hero.respawn <= 0 && hero.invuln <= 0 && e.attackCooldown <= 0 &&
+        (e.x - hero.x) ** 2 + (e.y - hero.y) ** 2 <= contact * contact) {
+      e.attackCooldown = B.enemyAttackInterval;
+      damageHero(e.damage);
+    }
+  }
+}
+
+function dropTokens(x, y, count) {
+  // A few clustered pickups, not one per token — a boss paying out a
+  // hundred at once still has to read.
+  const pickups = Math.min(Math.max(1, count), 8);
+  const per = Math.floor(count / pickups);
+  const extra = count % pickups;
+
+  for (let i = 0; i < pickups; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = 60 + Math.random() * 110;
+    tokens.push({
+      x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+      value: per + (i < extra ? 1 : 0),
+      age: 0, settle: 0.12 + Math.random() * 0.18, magnet: false, speed: 0,
+    });
+  }
+}
+
+function stepTokens(dt) {
+  const cap = carryCapacity();
+  const radius = pickupRadius();
+
+  for (const t of tokens) {
+    t.age += dt;
+
+    if (t.settle > 0) {
+      t.settle -= dt;
+      t.x += t.vx * dt; t.y += t.vy * dt;
+      const decay = Math.max(0, 1 - dt * 5);
+      t.vx *= decay; t.vy *= decay;
+      continue;
+    }
+
+    // A full stack stops attracting. This is the moment the Satchel
+    // upgrade sells itself without a word of tutorial text.
+    if (hero.carried >= cap || hero.respawn > 0) continue;
+
+    const dx = hero.x - t.x, dy = hero.y - t.y;
+    const dist = Math.hypot(dx, dy);
+    if (t.magnet || dist <= radius) {
+      t.magnet = true;
+      t.speed = Math.min(B.tokenMagnetSpeed, t.speed + B.tokenMagnetAcceleration * dt);
+      t.x += (dx / (dist || 1)) * t.speed * dt;
+      t.y += (dy / (dist || 1)) * t.speed * dt;
+
+      if (dist <= B.heroRadius) {
+        const taken = Math.min(cap - hero.carried, t.value);
+        if (taken > 0) { hero.carried += taken; t.value -= taken; }
+      }
+    }
+  }
+
+  tokens = tokens.filter(t => t.value > 0 && t.age <= B.tokenLifetime);
+}
+
+function depositWhole(amount) {
+  depositRemainder += amount;
+  const whole = Math.floor(depositRemainder);
+  depositRemainder -= whole;
+  return whole;
+}
+
+function stepDeposits(dt) {
+  if (hero.respawn > 0 || hero.carried <= 0) return;
+  const r = B.plotInteractionRadius;
+
+  if ((hero.x - bankPos.x) ** 2 + (hero.y - bankPos.y) ** 2 <= r * r) {
+    const whole = depositWhole(Math.min(hero.carried, B.depositRate * dt));
+    if (whole > 0) { hero.carried -= whole; bank += whole; }
+    return;
+  }
+
+  for (const p of plots) {
+    if ((hero.x - p.x) ** 2 + (hero.y - p.y) ** 2 > r * r) continue;
+    const target = towerCost(p.level);
+    const needed = target - p.deposited;
+    if (needed <= 0) continue;
+
+    const whole = depositWhole(Math.min(Math.min(hero.carried, needed), B.depositRate * dt));
+    if (whole <= 0) return;
+
+    hero.carried -= whole;
+    p.deposited += whole;
+
+    if (p.deposited >= target) {
+      p.deposited = 0;
+      p.level += 1;
+      p.pulse = 0.35;
+      shake = Math.min(26, shake + 6);
+      effects.push({
+        kind: "text", x: p.x, y: p.y, life: 1.0, max: 1.0, color: "#6fd1a0",
+        text: p.level === 1 ? "Tower built" : `Tower Lv ${p.level}`,
+      });
+      burst(p.x, p.y, "#6fd1a0", 14);
+    }
+    return;
+  }
+}
+
+function burst(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = 60 + Math.random() * 150;
+    effects.push({ kind: "bit", x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.34, max: 0.34, color });
+  }
+}
+
+function cleanup() {
+  const survivors = [];
+  for (const e of enemies) {
+    if (e.health > 0) { survivors.push(e); continue; }
+    killed++;
+    dropTokens(e.x, e.y, e.drop);
+    burst(e.x, e.y, e.boss ? "#c74edb" : "#e45c6b", e.boss ? 20 : 6);
+    if (e.boss) shake = Math.min(26, shake + 14);
+  }
+  enemies = survivors;
+}
+
+function stepEffects(dt) {
+  for (const f of effects) {
+    f.life -= dt;
+    if (f.kind === "bit") { f.x += f.vx * dt; f.y += f.vy * dt; f.vx *= 0.92; f.vy *= 0.92; }
+    if (f.kind === "text") f.y += 52 * dt;
+  }
+  effects = effects.filter(f => f.life > 0);
+}
+
+function step(dt) {
+  elapsed += dt;
+  stepWaves(dt);
+  stepHero(dt);
+  stepSword(dt);
+  stepTowers(dt);
+  stepEnemies(dt);
+  stepTokens(dt);
+  stepDeposits(dt);
+  cleanup();
+  stepEffects(dt);
+}
+
+/* ---- Rendering ------------------------------------------------------ */
+
+let vw = 0, vh = 0, scale = 1, dpr = 1;
+
+function resize() {
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  vw = innerWidth; vh = innerHeight;
+  canvas.width = Math.floor(vw * dpr);
+  canvas.height = Math.floor(vh * dpr);
+  canvas.style.width = vw + "px";
+  canvas.style.height = vh + "px";
+  scale = Math.min(vw, vh) / B.visibleWorldWidth;
+}
+addEventListener("resize", resize);
+resize();
+
+// World Y is up; screen Y is down.
+const sx = wx => (wx - camX) * scale + vw / 2;
+const sy = wy => vh / 2 - (wy - camY) * scale;
+
+function ring(x, y, r, color, width, dash) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath();
+  ctx.arc(sx(x), sy(y), r * scale, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function disc(x, y, r, fill, stroke, width) {
+  ctx.beginPath();
+  ctx.arc(sx(x), sy(y), r * scale, 0, Math.PI * 2);
+  ctx.fillStyle = fill;
+  ctx.fill();
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = width || 2; ctx.stroke(); }
+}
+
+function drawGround() {
+  ctx.fillStyle = "#0e1116";
+  ctx.fillRect(0, 0, vw, vh);
+
+  // A grid gives the eye something to track movement against; without it
+  // the hero reads as sliding in place.
+  const spacing = 100;
+  ctx.strokeStyle = "#232a35";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  const x0 = Math.floor((camX - vw / 2 / scale) / spacing) * spacing;
+  const x1 = camX + vw / 2 / scale;
+  for (let x = x0; x <= x1; x += spacing) { ctx.moveTo(sx(x), 0); ctx.lineTo(sx(x), vh); }
+  const y0 = Math.floor((camY - vh / 2 / scale) / spacing) * spacing;
+  const y1 = camY + vh / 2 / scale;
+  for (let y = y0; y <= y1; y += spacing) { ctx.moveTo(0, sy(y)); ctx.lineTo(vw, sy(y)); }
+  ctx.stroke();
+
+  ctx.strokeStyle = "#3a4454";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(sx(0), sy(B.arena), B.arena * scale, B.arena * scale);
+}
+
+function drawStations() {
+  const r = B.plotInteractionRadius;
+  const carrying = hero.carried > 0;
+
+  // Bank.
+  ring(bankPos.x, bankPos.y, r, carrying ? "#ffcb3d" : "#ffcb3d80", 3);
+  ctx.fillStyle = "#ffcb3d14";
+  ctx.beginPath();
+  ctx.arc(sx(bankPos.x), sy(bankPos.y), r * scale, 0, Math.PI * 2);
+  ctx.fill();
+  label("BANK", bankPos.x, bankPos.y, "#ffcb3d");
+
+  for (const p of plots) {
+    const built = p.level > 0;
+    ring(p.x, p.y, r, built ? "#6fd1a066" : (carrying ? "#8894a6" : "#3a4454"), 3, built ? null : [12, 9]);
+
+    if (built) {
+      const bump = 1 + p.pulse * 1.1;
+      disc(p.x, p.y, B.towerRadius * bump, "#6fd1a0", "#2c6a4e", 3);
+      ctx.fillStyle = "#dff6ea";
+      const s = B.towerRadius * 0.34 * scale * bump;
+      ctx.fillRect(sx(p.x) - s, sy(p.y) - s, s * 2, s * 2);
+      label(`LV ${p.level}`, p.x, p.y - r - 6, "#8894a6");
+    }
+
+    if (p.deposited > 0) {
+      const frac = Math.min(1, p.deposited / towerCost(p.level));
+      ctx.save();
+      ctx.strokeStyle = "#ffcb3d";
+      ctx.lineWidth = 5;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.arc(sx(p.x), sy(p.y), (r - 8) * scale, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+function label(text, x, y, color) {
+  ctx.save();
+  ctx.font = "700 13px ui-sans-serif, -apple-system, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.letterSpacing = "1.5px";
+  ctx.fillStyle = color;
+  ctx.fillText(text, sx(x), sy(y));
+  ctx.restore();
+}
+
+function drawHero() {
+  const down = hero.respawn > 0;
+  ctx.globalAlpha = down ? 0.25 : hero.invuln > 0 ? 0.6 : 1;
+
+  ctx.fillStyle = "#00000045";
+  ctx.beginPath();
+  ctx.ellipse(sx(hero.x), sy(hero.y) + 16 * scale, 22 * scale, 9 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  disc(hero.x, hero.y, B.heroRadius, "#6bc7ff", "#d8eeff", 3);
+
+  // A notch marks facing, so the swing reads as aimed rather than random.
+  ctx.save();
+  ctx.translate(sx(hero.x), sy(hero.y));
+  ctx.rotate(-hero.facing);
+  ctx.fillStyle = "#f2fbff";
+  ctx.fillRect(B.heroRadius * 0.35 * scale, -B.heroRadius * 0.22 * scale,
+               B.heroRadius * 0.85 * scale, B.heroRadius * 0.44 * scale);
+  ctx.restore();
+  ctx.globalAlpha = 1;
+
+  if (down) return;
+
+  // The stack above the head — the genre's signature read.
+  const visible = Math.min(hero.carried, 10);
+  const bx = sx(hero.x);
+  const by = sy(hero.y) - (B.heroRadius + 14) * scale;
+  for (let i = 0; i < visible; i++) {
+    const wobble = Math.sin(i * 1.7 + elapsed * 3) * 2.2 * scale;
+    ctx.beginPath();
+    ctx.arc(bx + wobble, by - i * 7 * scale, 8 * scale, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffcb3d";
+    ctx.fill();
+    ctx.strokeStyle = "#8a6c15";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+  if (hero.carried > 0) {
+    ctx.save();
+    ctx.font = "700 15px ui-monospace, Menlo, monospace";
+    ctx.textAlign = "center";
+    ctx.fillStyle = hero.carried >= carryCapacity() ? "#ffcb3d" : "#e8edf5";
+    ctx.fillText(String(hero.carried), bx, by - visible * 7 * scale - 12 * scale);
+    ctx.restore();
+  }
+}
+
+function drawEnemies() {
+  for (const e of enemies) {
+    const grow = Math.min(1, (elapsed - e.born) / 0.18);
+    const r = e.radius * (0.4 + 0.6 * grow);
+    const base = e.boss ? "#c74edb" : "#e45c6b";
+    disc(e.x, e.y, r, e.flash > 0 ? "#ffffff" : base, e.boss ? "#6b2578" : "#8f2733", e.boss ? 4 : 2);
+
+    if (e.boss) {
+      const w = e.radius * 2 * scale;
+      const frac = Math.max(0, e.health / e.maxHealth);
+      const bx = sx(e.x) - w / 2, by = sy(e.y) - (e.radius + 16) * scale;
+      ctx.fillStyle = "#00000070";
+      ctx.fillRect(bx, by, w, 5);
+      ctx.fillStyle = "#c74edb";
+      ctx.fillRect(bx, by, w * frac, 5);
+    }
+  }
+}
+
+function drawTokens() {
+  for (const t of tokens) {
+    const remaining = B.tokenLifetime - t.age;
+    ctx.globalAlpha = remaining < 3 ? Math.max(0.15, remaining / 3) : 1;
+    disc(t.x, t.y, 8, "#ffcb3d", "#8a6c15", 1.5);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawEffects() {
+  for (const f of effects) {
+    const k = f.life / f.max;
+
+    if (f.kind === "swing") {
+      ctx.save();
+      ctx.globalAlpha = k * 0.85;
+      ctx.beginPath();
+      ctx.moveTo(sx(f.x), sy(f.y));
+      ctx.arc(sx(f.x), sy(f.y), B.swordRange * scale, -f.facing - B.swordArc / 2, -f.facing + B.swordArc / 2);
+      ctx.closePath();
+      ctx.fillStyle = "#dff1ff59";
+      ctx.fill();
+      ctx.strokeStyle = "#f2fbffb0";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+    } else if (f.kind === "tracer") {
+      ctx.save();
+      ctx.globalAlpha = k;
+      ctx.strokeStyle = "#a8e8c8";
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(sx(f.x), sy(f.y));
+      ctx.lineTo(sx(f.tx), sy(f.ty));
+      ctx.stroke();
+      ctx.restore();
+    } else if (f.kind === "bit") {
+      ctx.globalAlpha = k;
+      ctx.fillStyle = f.color;
+      const s = 6 * scale * k;
+      ctx.fillRect(sx(f.x) - s / 2, sy(f.y) - s / 2, s, s);
+      ctx.globalAlpha = 1;
+    } else if (f.kind === "text") {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, k * 2);
+      ctx.font = "800 16px ui-sans-serif, -apple-system, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.letterSpacing = "1px";
+      ctx.fillStyle = f.color;
+      ctx.fillText(f.text.toUpperCase(), sx(f.x), sy(f.y));
+      ctx.restore();
+    }
+  }
+}
+
+function drawStick() {
+  if (!stick) return;
+  const dx = stick.x - stick.ox, dy = stick.y - stick.oy;
+  const dist = Math.hypot(dx, dy) || 1;
+  const clamped = Math.min(dist, MAX_TRAVEL);
+
+  ctx.save();
+  ctx.strokeStyle = "#ffffff40";
+  ctx.fillStyle = "#ffffff0f";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(stick.ox, stick.oy, MAX_TRAVEL, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "#ffffff4d";
+  ctx.beginPath();
+  ctx.arc(stick.ox + (dx / dist) * clamped, stick.oy + (dy / dist) * clamped, 26, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function render() {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawGround();
+  drawStations();
+  drawTokens();
+  drawEnemies();
+  drawHero();
+  drawEffects();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawStick();
+}
+
+/* ---- HUD wiring ----------------------------------------------------- */
+
+const el = {
+  wave: document.getElementById("wave"),
+  health: document.getElementById("health"),
+  healthWrap: document.getElementById("healthWrap"),
+  bank: document.getElementById("bank"),
+  bankWrap: document.getElementById("bankWrap"),
+  carry: document.getElementById("carry"),
+  towers: document.getElementById("towers"),
+  rows: document.getElementById("rows"),
+  drawer: document.getElementById("drawer"),
+  toggle: document.getElementById("toggle"),
+  banner: document.getElementById("banner"),
+};
+
+el.toggle.addEventListener("click", () => {
+  const open = el.drawer.classList.toggle("open");
+  el.toggle.textContent = open ? "Close" : "Upgrades";
+});
+
+const rowEls = UPGRADES.map(u => {
+  const b = document.createElement("button");
+  b.className = "row";
+  b.type = "button";
+  b.innerHTML =
+    `<span style="flex:1"><span class="name">${u.name}</span><br><span class="blurb">${u.blurb}</span></span>` +
+    `<span class="lv">LV 0</span><span class="price">0</span>`;
+  b.addEventListener("click", () => {
+    const cost = priceOf(u.key);
+    if (bank < cost) return;
+    bank -= cost;
+    lv[u.key] += 1;
+    syncHUD();
+  });
+  el.rows.appendChild(b);
+  return { def: u, node: b, lv: b.querySelector(".lv"), price: b.querySelector(".price") };
+});
+
+function announce(text, boss) {
+  el.banner.textContent = text;
+  el.banner.classList.toggle("boss", !!boss);
+  el.banner.classList.remove("show");
+  void el.banner.offsetWidth;
+  el.banner.classList.add("show");
+}
+
+let hudTimer = 0;
+function syncHUD() {
+  const wave = Math.max(1, director.wave);
+  el.wave.textContent = `Wave ${wave}`;
+  el.wave.classList.toggle("boss", isBossWave(wave));
+
+  const frac = Math.max(0, hero.health / B.heroMaxHealth);
+  el.health.style.transform = `scaleX(${frac})`;
+  el.healthWrap.classList.toggle("low", frac < 0.3);
+
+  el.bank.textContent = bank;
+  el.bankWrap.classList.toggle("dim", bank === 0);
+
+  const cap = carryCapacity();
+  el.carry.textContent = `${hero.carried}/${cap}`;
+  el.carry.classList.toggle("full", hero.carried >= cap);
+
+  const built = plots.filter(p => p.level > 0).length;
+  el.towers.textContent = built === 1 ? "1 tower" : `${built} towers`;
+
+  for (const r of rowEls) {
+    const cost = priceOf(r.def.key);
+    r.lv.textContent = `LV ${lv[r.def.key]}`;
+    r.price.textContent = cost;
+    r.node.classList.toggle("can", bank >= cost);
+  }
+}
+
+/* ---- Loop ----------------------------------------------------------- */
+
+let last = 0, paused = false;
+document.addEventListener("visibilitychange", () => {
+  paused = document.hidden;
+  if (!paused) last = performance.now();
+});
+
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (!last) last = now;
+  // Clamp so a stall cannot advance the simulation by a huge step.
+  const dt = Math.min(1 / 20, Math.max(0, (now - last) / 1000));
+  last = now;
+  if (paused) return;
+
+  const stickInput = readStick();
+  const keyInput = readKeys();
+  const source = stickInput || keyInput || { x: 0, y: 0 };
+  input.x = source.x; input.y = source.y;
+  if (keyInput) hideHint();
+
+  step(dt);
+
+  // Soft follow, with shake layered on top rather than fighting it.
+  const t = 1 - Math.pow(0.001, dt);
+  camX += (hero.x - camX) * t;
+  camY += (hero.y - camY) * t;
+  shake = Math.max(0, shake - shake * 9 * dt - 0.4 * dt);
+  const jitter = reduceMotion ? 0 : shake;
+  const savedX = camX, savedY = camY;
+  camX += (Math.random() * 2 - 1) * jitter / scale;
+  camY += (Math.random() * 2 - 1) * jitter / scale;
+
+  render();
+  camX = savedX; camY = savedY;
+
+  hudTimer += dt;
+  if (hudTimer >= 0.1) { hudTimer = 0; syncHUD(); }
+}
+
+syncHUD();
+requestAnimationFrame(frame);
+</script>

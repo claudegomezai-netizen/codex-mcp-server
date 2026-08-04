@@ -8,7 +8,29 @@ and stations where that stack becomes archer towers and upgrades.
 `DESIGN.md` covers the genre research and every balance decision, including the
 three separate economy failures the tooling caught and how they were fixed.
 
-## Running the game
+## Playing it in a browser
+
+`web/index.html` is a self-contained playable build — open the file, no server,
+no build step. Drag to move on touch, WASD or arrows on desktop.
+
+It is a **second implementation of the same rules**, ported to JavaScript so the
+game can be played without a Mac. `Balance.swift` remains the source of truth;
+the constants in `web/index.html` sit in one marked block at the top so
+re-syncing is a copy-paste. Anyone changing balance needs to change both, and
+nothing enforces that — worth knowing before either side is edited.
+
+The port was checked against the Swift core by running the same scripted
+playtest headlessly:
+
+| | Swift core | Browser build |
+|---|---|---|
+| First kill | 3.7s | 3.9s |
+| First tower | 13.7s | 13.2s |
+| Upgrades bought | 21 | 20 |
+| Waves reached | 9 | 9 |
+| Deaths | 10 | 10 |
+
+## Running the iOS app
 
 Open `Ironhold.xcodeproj` and press ⌘R. Portrait iPhone or iPad, iOS 17+.
 
@@ -58,6 +80,7 @@ every value in the game was chosen.
 | `Sources/IronholdCore/World.swift` | The simulation step. |
 | `Sources/IronholdTune/` | Balance inspector and headless playtest harness. |
 | `App/` | SpriteKit rendering, joystick, SwiftUI HUD. No game rules. |
+| `web/index.html` | Self-contained playable browser build. |
 | `Tests/` | Simulation and economy tests. |
 
 The Xcode target compiles `App/` and `Sources/IronholdCore/` together into one

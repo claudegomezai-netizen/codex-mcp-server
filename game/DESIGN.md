@@ -235,6 +235,11 @@ depend on it.
 - No audio. `GameModel.playCollect()` is the hook, deliberately silent: firing a
   haptic per token would buzz continuously during a swarm.
 - The SpriteKit layer has never been compiled. See the README.
+- `web/index.html` duplicates the simulation in JavaScript so the game is
+  playable without a Mac. Its behaviour was verified against the Swift core
+  (first kill 3.9s vs 3.7s, first tower 13.2s vs 13.7s, same wave and death
+  counts), but the two implementations can drift and nothing enforces that they
+  don't. `Balance.swift` is the source of truth.
 
 ## Sources
 
