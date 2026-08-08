@@ -96,3 +96,8 @@ estimates.
 Linux container with no Apple SDK, so it is syntax-checked only — expect to fix
 some type errors on first build. The simulation underneath it is the part that
 carries real confidence.
+
+**The visual pass described in `DESIGN.md` §7 is browser-only.** Lighting,
+contact shadows, the drawn sword, tower silhouettes and floor detail all live
+in `web/index.html`. `App/` received the camera-distance change and nothing
+else, so the iOS build still looks like the flat first version.

@@ -26,7 +26,11 @@ enum Theme {
 
     /// How many world units fit across the narrow edge of the screen. Larger
     /// shows more of the field; this is the main "feel" dial for the camera.
-    static let visibleWorldWidth: CGFloat = 780
+    /// How much world the short screen edge shows. At 780 the hero was 26pt
+    /// across on a phone — legible, but the arena read as empty and far away.
+    /// 520 puts the hero at roughly a tenth of the screen width, which is
+    /// where the genre sits.
+    static let visibleWorldWidth: CGFloat = 520
 }
 
 extension SKColor {

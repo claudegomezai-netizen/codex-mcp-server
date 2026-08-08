@@ -210,7 +210,46 @@ tokens earned   2187
 whenever it is not commuting — a genuine worst case. Worth re-checking against a
 real player before touching survivability again.
 
-## 7. Architecture
+## 7. How it looks, and why it didn't
+
+The first playable build was flat discs on a grid, and it read as badly as
+that sounds. Screenshotting it in Chromium made three separate causes
+obvious, none of which were about art:
+
+**The camera was twice as far out as it should have been.** The short screen
+edge showed 780 world units, which put the hero at 26 pixels across on a
+phone — about 6% of the screen width. The genre sits nearer 10%. Dropping to
+520 changed more than any drawing change did: the station ring now fits on
+screen, so the loop is legible without moving.
+
+**Nothing was lit.** A flat-filled circle reads as a hole punched in the
+floor. Every body is now a vertical gradient with a rim on the lower arc and
+one specular highlight, and everything that touches the ground gets a soft
+contact shadow. Same shapes, but they sit *on* the floor instead of in front
+of it.
+
+**Towers were circles.** They are now drawn as structures rising from their
+ground point, with a parapet that overhangs the shaft and one course line per
+level — so a tower's level is readable from its silhouette without reading
+the label. Faking height like this is the whole difference between a tower
+and a green dot.
+
+Smaller things that each turned out to matter: the sword is drawn rather than
+implied, with a crossguard clear of the body and parallel sides (a blade that
+tapers all the way from the hand reads as a needle); the floor has hashed
+flagstones so movement has texture to cross; enemies get a per-instance tint
+and a hard outline, because identical fills turn a crowd into one pink mass;
+and only the *nearest* empty plot is tagged BUILD, since six labels at once
+is noise.
+
+Cost was watched throughout — a canvas-call counter runs in the headless
+harness. The first pass hit ~7,800 calls per frame with a swarm on screen,
+almost all of it loose tokens carrying a gradient shadow and an additive
+bloom each. Viewport culling plus a flat shadow on ground tokens brought it
+under 4,000. The bloom budget went to the stack above the head instead, which
+is the read that actually matters.
+
+## 8. Architecture
 
 `IronholdCore` has no SpriteKit, UIKit, or SwiftUI in it. The whole game —
 combat, economy, wave pacing — is plain Swift that builds and tests on Linux,
@@ -223,7 +262,7 @@ what makes a five-minute session testable in 30 milliseconds.
 Given a seed and an input sequence, a run is reproducible — the balance tests
 depend on it.
 
-## 8. Known gaps
+## 9. Known gaps
 
 - No persistence. A run starts fresh every launch.
 - No offline progression, the genre's other retention pillar.
@@ -235,6 +274,13 @@ depend on it.
 - No audio. `GameModel.playCollect()` is the hook, deliberately silent: firing a
   haptic per token would buzz continuously during a swarm.
 - The SpriteKit layer has never been compiled. See the README.
+- **The visual pass in section 7 landed in the browser build only.** The
+  SpriteKit renderer got the camera distance and nothing else, so on iOS the
+  game still looks like the flat version. Bringing it across is real work and
+  is not done.
+- Enemies do not push each other apart, so a crowd stacks into one spot. The
+  outline and per-instance tint make that readable, but the underlying pile-up
+  is a simulation gap, not a drawing one.
 - `web/index.html` duplicates the simulation in JavaScript so the game is
   playable without a Mac. Its behaviour was verified against the Swift core
   (first kill 3.9s vs 3.7s, first tower 13.2s vs 13.7s, same wave and death

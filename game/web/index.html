@@ -200,6 +200,7 @@
     font: var(--label);
     letter-spacing: 0.16em;
     text-transform: uppercase;
+    white-space: nowrap;
     color: #ffffff59;
     pointer-events: none;
     transition: opacity 0.5s;
@@ -320,7 +321,10 @@ const B = {
   bossRadiusMultiplier: 2.1,
 
   towerBuildCost: 35,
-  visibleWorldWidth: 780,
+  // How much world the short screen edge shows. At 780 the hero was 26px
+  // across on a phone and the arena read as empty; 520 puts him at roughly a
+  // tenth of the screen width, where the genre sits.
+  visibleWorldWidth: 520,
 };
 
 const UPGRADES = [
@@ -817,6 +821,7 @@ function step(dt) {
 /* ---- Rendering ------------------------------------------------------ */
 
 let vw = 0, vh = 0, scale = 1, dpr = 1;
+const TAU = Math.PI * 2;
 
 function resize() {
   dpr = Math.min(devicePixelRatio || 1, 2);
@@ -834,33 +839,202 @@ resize();
 const sx = wx => (wx - camX) * scale + vw / 2;
 const sy = wy => vh / 2 - (wy - camY) * scale;
 
+/* ---- Drawing primitives ---------------------------------------------
+   Gradients are the expensive part of a canvas frame, so every one is
+   built once at the origin and cached; callers translate into place.
+   ------------------------------------------------------------------- */
+
+const radialCache = new Map();
+const linearCache = new Map();
+
+function cached(store, key, make) {
+  let g = store.get(key);
+  if (!g) {
+    g = make();
+    if (store.size > 240) store.clear();
+    store.set(key, g);
+  }
+  return g;
+}
+
+// Every light, glow and shadow in the scene is this one falloff, so the
+// lighting reads as a single system rather than per-object decoration.
+function glow(px, py, radius, inner, outer) {
+  if (radius <= 0) return;
+  const r = Math.round(radius);
+  const g = cached(radialCache, r + "|" + inner + "|" + outer, () => {
+    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+    grad.addColorStop(0, inner);
+    grad.addColorStop(1, outer);
+    return grad;
+  });
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+}
+
+function additive(fn) {
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  fn();
+  ctx.restore();
+}
+
+// A squashed blob under an entity. The cheapest thing that stops sprites
+// reading as stickers pasted onto the background.
+function contactShadow(x, y, r, alpha) {
+  ctx.save();
+  ctx.translate(sx(x), sy(y) + r * 0.5 * scale);
+  ctx.scale(1, 0.36);
+  glow(0, 0, r * 1.7 * scale, "rgba(0,0,0," + alpha + ")", "rgba(0,0,0,0)");
+  ctx.restore();
+}
+
+// A flat disc reads as a hole punched in the floor; a shaded one reads as
+// a body. Light comes from the upper left everywhere in this scene.
+function shadedBall(px, py, pr, top, bottom, rim) {
+  const r = Math.round(pr);
+  const g = cached(linearCache, r + "|" + top + "|" + bottom, () => {
+    const grad = ctx.createLinearGradient(0, -r, 0, r);
+    grad.addColorStop(0, top);
+    grad.addColorStop(1, bottom);
+    return grad;
+  });
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(0, 0, pr, 0, TAU);
+  ctx.fill();
+
+  if (rim) {
+    // Only the lower arc catches the rim, which is what sells the volume.
+    ctx.strokeStyle = rim;
+    ctx.lineWidth = Math.max(1.2, pr * 0.13);
+    ctx.beginPath();
+    ctx.arc(0, 0, pr - ctx.lineWidth / 2, TAU * 0.06, TAU * 0.44);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = "rgba(255,255,255,0.2)";
+  ctx.beginPath();
+  ctx.ellipse(-pr * 0.28, -pr * 0.38, pr * 0.36, pr * 0.24, -0.5, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+}
+
+// Positional hash — same cell, same value, every frame and every run.
+function hash2(i, j) {
+  let h = Math.imul(i, 374761393) + Math.imul(j, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+// Nothing off-screen is worth a shadow and a glow. Tokens especially pile
+// up during a swarm, and each one costs a dozen canvas calls.
+function onScreen(x, y, pad) {
+  const px = sx(x), py = sy(y), m = (pad || 40) * scale;
+  return px > -m && px < vw + m && py > -m && py < vh + m;
+}
+
+function polygon(px, py, r, sides, rot) {
+  ctx.beginPath();
+  for (let i = 0; i < sides; i++) {
+    const a = rot + (i / sides) * TAU;
+    const X = px + Math.cos(a) * r, Y = py + Math.sin(a) * r;
+    if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y);
+  }
+  ctx.closePath();
+}
+
 function ring(x, y, r, color, width, dash) {
   ctx.save();
   ctx.strokeStyle = color;
   ctx.lineWidth = width;
   if (dash) ctx.setLineDash(dash);
   ctx.beginPath();
-  ctx.arc(sx(x), sy(y), r * scale, 0, Math.PI * 2);
+  ctx.arc(sx(x), sy(y), r * scale, 0, TAU);
   ctx.stroke();
   ctx.restore();
 }
 
-function disc(x, y, r, fill, stroke, width) {
+// A coin seen almost edge-on, spinning. Width oscillates; the highlight
+// rides the face so the spin is legible at eight pixels across.
+function coin(px, py, r, spin) {
+  // Floored well above zero: a coin caught exactly edge-on is a sliver, and
+  // a floor covered in slivers reads as scattered sticks, not treasure.
+  const rx = Math.max(r * 0.38, Math.abs(Math.cos(spin)) * r);
+  const key = Math.round(r) + "|coin";
+  const g = cached(linearCache, key, () => {
+    const grad = ctx.createLinearGradient(0, -Math.round(r), 0, Math.round(r));
+    grad.addColorStop(0, "#ffeaa0");
+    grad.addColorStop(0.45, "#ffcb3d");
+    grad.addColorStop(1, "#a9760c");
+    return grad;
+  });
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.arc(sx(x), sy(y), r * scale, 0, Math.PI * 2);
-  ctx.fillStyle = fill;
+  ctx.ellipse(0, 0, rx, r, 0, 0, TAU);
   ctx.fill();
-  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = width || 2; ctx.stroke(); }
+  ctx.strokeStyle = "#6d4c07";
+  ctx.lineWidth = Math.max(1, r * 0.15);
+  ctx.stroke();
+  if (rx > r * 0.35) {
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.beginPath();
+    ctx.ellipse(-rx * 0.28, -r * 0.34, rx * 0.3, r * 0.22, 0, 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
+/* ---- Ground ---------------------------------------------------------- */
+
 function drawGround() {
-  ctx.fillStyle = "#0e1116";
+  ctx.fillStyle = "#070a0e";
   ctx.fillRect(0, 0, vw, vh);
 
-  // A grid gives the eye something to track movement against; without it
-  // the hero reads as sliding in place.
+  const left = sx(0), top = sy(B.arena), size = B.arena * scale;
+  const cx = sx(B.base.x), cy = sy(B.base.y);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(left, top, size, size);
+  ctx.clip();
+
+  ctx.fillStyle = "#1a2130";
+  ctx.fillRect(left, top, size, size);
+
+  // Lit from the middle, so the stations sit in the bright part of the
+  // floor and the arena edges fall away into the dark.
+  glow(cx, cy, B.arena * 0.62 * scale, "#2c3a4d", "rgba(44,58,77,0)");
+
+  // The worn ring linking the stations. It is the route the loop asks the
+  // player to walk, so the floor says so out loud.
+  const pr = B.plotRingRadius * scale;
+  ctx.strokeStyle = "#26313f";
+  ctx.lineWidth = 58 * scale;
+  ctx.beginPath();
+  ctx.arc(cx, cy, pr, 0, TAU);
+  ctx.stroke();
+  ctx.strokeStyle = "#3b4a5e";
+  ctx.lineWidth = 1.5;
+  for (const off of [-29 * scale, 29 * scale]) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, pr + off, 0, TAU);
+    ctx.stroke();
+  }
+
+  // Grid, kept faint — it exists so movement has something to read
+  // against, not to be looked at.
   const spacing = 100;
-  ctx.strokeStyle = "#232a35";
+  ctx.strokeStyle = "rgba(255,255,255,0.05)";
   ctx.lineWidth = 1;
   ctx.beginPath();
   const x0 = Math.floor((camX - vw / 2 / scale) / spacing) * spacing;
@@ -871,34 +1045,184 @@ function drawGround() {
   for (let y = y0; y <= y1; y += spacing) { ctx.moveTo(0, sy(y)); ctx.lineTo(vw, sy(y)); }
   ctx.stroke();
 
-  ctx.strokeStyle = "#3a4454";
+  // Flagstones. Without them the floor is a bare grid and the hero reads as
+  // sliding over nothing. Positions are hashed from the cell so they stay
+  // put rather than crawling with the camera.
+  for (const [tint, pass] of [["rgba(255,255,255,0.030)", 0], ["rgba(0,0,0,0.16)", 1]]) {
+    ctx.fillStyle = tint;
+    for (let gx = x0; gx <= x1; gx += spacing) {
+      for (let gy = y0; gy <= y1; gy += spacing) {
+        const i = Math.round(gx / spacing), j = Math.round(gy / spacing);
+        for (let k = 0; k < 3; k++) {
+          const a = hash2(i + pass * 91, j * 31 + k);
+          const b = hash2(i * 17 + k, j + pass * 57);
+          const s = (5 + hash2(i + k, j - k) * 13) * scale;
+          ctx.fillRect(sx(gx + a * spacing), sy(gy + b * spacing), s, s * 0.62);
+        }
+      }
+    }
+  }
+  ctx.restore();
+
+  // Wall: a dark outer mass with a lit inner lip.
+  ctx.strokeStyle = "#05070a";
+  ctx.lineWidth = 14;
+  ctx.strokeRect(left - 7, top - 7, size + 14, size + 14);
+  ctx.strokeStyle = "#414d63";
   ctx.lineWidth = 3;
-  ctx.strokeRect(sx(0), sy(B.arena), B.arena * scale, B.arena * scale);
+  ctx.strokeRect(left, top, size, size);
+}
+
+/* ---- Stations -------------------------------------------------------- */
+
+function label(text, x, y, color) {
+  ctx.save();
+  ctx.font = "700 13px ui-sans-serif, -apple-system, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.letterSpacing = "1.5px";
+  ctx.fillStyle = "rgba(0,0,0,0.65)";
+  ctx.fillText(text, sx(x), sy(y) + 1.5);
+  ctx.fillStyle = color;
+  ctx.fillText(text, sx(x), sy(y));
+  ctx.restore();
+}
+
+// Towers are drawn as structures rising from their ground point. Faking
+// height like this is the whole difference between a tower and a dot.
+function drawTower(p) {
+  const px = sx(p.x), py = sy(p.y);
+  const w = B.towerRadius * scale;
+  const tiers = Math.min(p.level, 8);
+  const h = (52 + tiers * 11) * scale * (1 + p.pulse * 0.45);
+  const topY = py - h;
+  const topW = w * 0.58;
+
+  contactShadow(p.x, p.y, B.towerRadius * 1.2, 0.5);
+
+  // Footing.
+  ctx.fillStyle = "#28313e";
+  ctx.beginPath();
+  ctx.ellipse(px, py, w * 1.2, w * 0.48, 0, 0, TAU);
+  ctx.fill();
+
+  // Shaft, lit down one side.
+  const key = Math.round(w) + "|tower";
+  const g = cached(linearCache, key, () => {
+    const grad = ctx.createLinearGradient(-Math.round(w), 0, Math.round(w), 0);
+    grad.addColorStop(0, "#2f6350");
+    grad.addColorStop(0.34, "#6fd1a0");
+    grad.addColorStop(1, "#255043");
+    return grad;
+  });
+  ctx.save();
+  ctx.translate(px, 0);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(-w, py);
+  ctx.lineTo(-topW, topY);
+  ctx.lineTo(topW, topY);
+  ctx.lineTo(w, py);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(6,12,10,0.55)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.restore();
+
+  // One course line per level, so the level is legible without reading it.
+  ctx.strokeStyle = "rgba(0,0,0,0.25)";
+  ctx.lineWidth = 1.5;
+  for (let i = 1; i <= tiers; i++) {
+    const t = i / (tiers + 1);
+    const yy = py + (topY - py) * t;
+    const ww = w + (topW - w) * t;
+    ctx.beginPath();
+    ctx.moveTo(px - ww, yy);
+    ctx.lineTo(px + ww, yy);
+    ctx.stroke();
+  }
+
+  // Parapet overhangs the shaft — that flare is what separates a tower
+  // from a traffic cone — with merlons standing proud of it.
+  const c = topW * 0.62;
+  ctx.fillStyle = "#8fe3bb";
+  ctx.fillRect(px - topW * 1.5, topY - c * 0.8, topW * 3, c * 0.8);
+  ctx.fillStyle = "#4f9c7c";
+  ctx.fillRect(px - topW * 1.5, topY - c * 0.14, topW * 3, c * 0.14);
+  ctx.fillStyle = "#8fe3bb";
+  for (let i = -1; i <= 1; i++) {
+    ctx.fillRect(px + i * topW * 0.98 - c * 0.28, topY - c * 1.7, c * 0.56, c * 0.95);
+  }
+
+  // The archer turns to whatever the tower would shoot at.
+  const target = nearestEnemy(p.x, p.y, B.towerRange);
+  const aim = target ? Math.atan2(target.y - p.y, target.x - p.x) : Math.PI / 2;
+  ctx.fillStyle = "#eafaf2";
+  ctx.beginPath();
+  ctx.arc(px + Math.cos(aim) * topW * 0.4,
+          topY - c * 1.05 - Math.sin(aim) * topW * 0.16,
+          c * 0.34, 0, TAU);
+  ctx.fill();
 }
 
 function drawStations() {
   const r = B.plotInteractionRadius;
   const carrying = hero.carried > 0;
 
-  // Bank.
-  ring(bankPos.x, bankPos.y, r, carrying ? "#ffcb3d" : "#ffcb3d80", 3);
-  ctx.fillStyle = "#ffcb3d14";
-  ctx.beginPath();
-  ctx.arc(sx(bankPos.x), sy(bankPos.y), r * scale, 0, Math.PI * 2);
+  // ---- Bank: a vault plate, not a circle on the floor. ----------------
+  const bx = sx(bankPos.x), by = sy(bankPos.y), br = r * scale;
+  additive(() => glow(bx, by, br * 2.1,
+    carrying ? "rgba(255,203,61,0.20)" : "rgba(255,203,61,0.08)", "rgba(255,203,61,0)"));
+
+  polygon(bx, by, br, 8, Math.PI / 8);
+  ctx.fillStyle = "#1a1f28";
   ctx.fill();
-  label("BANK", bankPos.x, bankPos.y, "#ffcb3d");
+  ctx.strokeStyle = carrying ? "#ffcb3d" : "rgba(255,203,61,0.5)";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  polygon(bx, by, br * 0.66, 8, Math.PI / 8);
+  ctx.strokeStyle = "rgba(255,203,61,0.22)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  for (let i = 0; i < 3; i++) coin(bx, by + (6 - i * 6) * scale, 9 * scale, 0);
+  label("BANK", bankPos.x, bankPos.y - r - 12, "#ffcb3d");
+
+  // ---- Plots ----------------------------------------------------------
+  // Only the nearest empty plot is tagged. Six BUILD labels at once is
+  // noise, and the one you are walking towards is the only useful answer.
+  let prompt = null, best = Infinity;
+  if (carrying) {
+    for (const p of plots) {
+      if (p.level > 0) continue;
+      const d = (p.x - hero.x) ** 2 + (p.y - hero.y) ** 2;
+      if (d < best) { best = d; prompt = p; }
+    }
+  }
 
   for (const p of plots) {
-    const built = p.level > 0;
-    ring(p.x, p.y, r, built ? "#6fd1a066" : (carrying ? "#8894a6" : "#3a4454"), 3, built ? null : [12, 9]);
-
-    if (built) {
-      const bump = 1 + p.pulse * 1.1;
-      disc(p.x, p.y, B.towerRadius * bump, "#6fd1a0", "#2c6a4e", 3);
-      ctx.fillStyle = "#dff6ea";
-      const s = B.towerRadius * 0.34 * scale * bump;
-      ctx.fillRect(sx(p.x) - s, sy(p.y) - s, s * 2, s * 2);
-      label(`LV ${p.level}`, p.x, p.y - r - 6, "#8894a6");
+    if (p.level > 0) {
+      ring(p.x, p.y, r, "rgba(111,209,160,0.28)", 2);
+      drawTower(p);
+      label("LV " + p.level, p.x, p.y - r - 12, "#8fe3bb");
+    } else {
+      ring(p.x, p.y, r, carrying ? "#8894a6" : "#3a4454", 3, [12, 9]);
+      // A ghost of what would stand here, so an empty plot advertises itself.
+      ctx.save();
+      ctx.globalAlpha = carrying ? 0.3 : 0.14;
+      const px = sx(p.x), py = sy(p.y), w = B.towerRadius * scale;
+      ctx.fillStyle = "#6fd1a0";
+      ctx.beginPath();
+      ctx.moveTo(px - w, py);
+      ctx.lineTo(px - w * 0.7, py - 40 * scale);
+      ctx.lineTo(px + w * 0.7, py - 40 * scale);
+      ctx.lineTo(px + w, py);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      if (p === prompt) label("BUILD", p.x, p.y - r - 12, "#8894a6");
     }
 
     if (p.deposited > 0) {
@@ -908,145 +1232,312 @@ function drawStations() {
       ctx.lineWidth = 5;
       ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.arc(sx(p.x), sy(p.y), (r - 8) * scale, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
+      ctx.arc(sx(p.x), sy(p.y), (r - 8) * scale, -Math.PI / 2, -Math.PI / 2 + TAU * frac);
       ctx.stroke();
       ctx.restore();
     }
   }
 }
 
-function label(text, x, y, color) {
+/* ---- Hero ------------------------------------------------------------ */
+
+// The blade is drawn, not implied. The swing effect drives it: it winds
+// back over the first 40% of its life, then sweeps the same arc the hit
+// test uses.
+function drawSword() {
+  const swing = effects.find(f => f.kind === "swing");
+  const half = B.swordArc * 0.5;
+  let a = hero.facing - half * 0.8, reach = 0.82;
+
+  if (swing) {
+    const k = 1 - swing.life / swing.max;
+    if (k < 0.4) {
+      const t = k / 0.4;
+      a = hero.facing + half * (0.15 + 0.95 * t);
+      reach = 0.82 + 0.22 * t;
+    } else {
+      const t = (k - 0.4) / 0.6;
+      const e = 1 - Math.pow(1 - t, 3);
+      a = hero.facing + half * 1.1 - half * 2.05 * e;
+      reach = 1.04 - 0.22 * e;
+    }
+  }
+
+  // Drawn from inside the body so the hero appears to hold it, and stopped
+  // well short of the hit radius — the arc effect is what communicates
+  // reach. Too long reads as a needle, too wide as a cone.
+  const grip = B.heroRadius * 0.1 * scale;
+  const guard = B.heroRadius * 1.04 * scale;          // just clear of the body
+  const r1 = (B.heroRadius + B.swordRange * 0.6) * scale * reach;
+  const w0 = B.heroRadius * 0.25 * scale;
+  const taper = guard + (r1 - guard) * 0.74;
+
   ctx.save();
-  ctx.font = "700 13px ui-sans-serif, -apple-system, system-ui, sans-serif";
+  ctx.translate(sx(hero.x), sy(hero.y));
+  ctx.rotate(-a);
+
+  // Grip, then crossguard, then blade. A blade that tapers all the way from
+  // the hand reads as a needle; parallel sides with a short point read as a
+  // sword, and the guard is what makes the hand legible.
+  ctx.strokeStyle = "#5c4326";
+  ctx.lineWidth = w0 * 0.8;
+  ctx.beginPath();
+  ctx.moveTo(grip, 0);
+  ctx.lineTo(guard, 0);
+  ctx.stroke();
+
+  const g = cached(linearCache, Math.round(r1) + "|blade", () => {
+    const grad = ctx.createLinearGradient(0, -20, 0, 20);
+    grad.addColorStop(0, "#ffffff");
+    grad.addColorStop(0.5, "#dceaf8");
+    grad.addColorStop(1, "#8ea4ba");
+    return grad;
+  });
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(guard, -w0);
+  ctx.lineTo(taper, -w0);
+  ctx.lineTo(r1, 0);
+  ctx.lineTo(taper, w0);
+  ctx.lineTo(guard, w0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(10,18,26,0.75)";
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // Fuller down the middle of the blade.
+  ctx.strokeStyle = "rgba(255,255,255,0.55)";
+  ctx.lineWidth = Math.max(1, w0 * 0.28);
+  ctx.beginPath();
+  ctx.moveTo(guard + w0, 0);
+  ctx.lineTo(taper, 0);
+  ctx.stroke();
+
+  ctx.fillStyle = "#e0a94b";
+  ctx.fillRect(guard - w0 * 0.42, -w0 * 2.1, w0 * 0.84, w0 * 4.2);
+  ctx.restore();
+}
+
+function drawCarry() {
+  const visible = Math.min(hero.carried, 10);
+  if (visible === 0) return;
+  const full = hero.carried >= carryCapacity();
+  const bx = sx(hero.x);
+  const by = sy(hero.y) - (B.heroRadius + 14) * scale;
+
+  if (full) {
+    additive(() => glow(bx, by - visible * 3.5 * scale, 42 * scale,
+      "rgba(255,203,61,0.28)", "rgba(255,203,61,0)"));
+  }
+
+  for (let i = 0; i < visible; i++) {
+    const wobble = Math.sin(i * 1.7 + elapsed * 3) * 2.2 * scale;
+    ctx.save();
+    ctx.translate(bx + wobble, by - i * 7 * scale);
+    ctx.scale(1, 0.62);
+    coin(0, 0, 9 * scale, 0);
+    ctx.restore();
+  }
+
+  ctx.save();
+  ctx.font = "700 15px ui-monospace, Menlo, monospace";
   ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.letterSpacing = "1.5px";
-  ctx.fillStyle = color;
-  ctx.fillText(text, sx(x), sy(y));
+  const ty = by - visible * 7 * scale - 12 * scale;
+  ctx.fillStyle = "rgba(0,0,0,0.7)";
+  ctx.fillText(String(hero.carried), bx, ty + 1.5);
+  ctx.fillStyle = full ? "#ffcb3d" : "#e8edf5";
+  ctx.fillText(String(hero.carried), bx, ty);
   ctx.restore();
 }
 
 function drawHero() {
   const down = hero.respawn > 0;
-  ctx.globalAlpha = down ? 0.25 : hero.invuln > 0 ? 0.6 : 1;
+  ctx.globalAlpha = down ? 0.22
+    : hero.invuln > 0 ? 0.55 + Math.abs(Math.sin(elapsed * 26)) * 0.4
+    : 1;
 
-  ctx.fillStyle = "#00000045";
-  ctx.beginPath();
-  ctx.ellipse(sx(hero.x), sy(hero.y) + 16 * scale, 22 * scale, 9 * scale, 0, 0, Math.PI * 2);
-  ctx.fill();
+  contactShadow(hero.x, hero.y, B.heroRadius, 0.55);
+  additive(() => glow(sx(hero.x), sy(hero.y), B.heroRadius * 3 * scale,
+    "rgba(107,199,255,0.13)", "rgba(107,199,255,0)"));
 
-  disc(hero.x, hero.y, B.heroRadius, "#6bc7ff", "#d8eeff", 3);
-
-  // A notch marks facing, so the swing reads as aimed rather than random.
-  ctx.save();
-  ctx.translate(sx(hero.x), sy(hero.y));
-  ctx.rotate(-hero.facing);
-  ctx.fillStyle = "#f2fbff";
-  ctx.fillRect(B.heroRadius * 0.35 * scale, -B.heroRadius * 0.22 * scale,
-               B.heroRadius * 0.85 * scale, B.heroRadius * 0.44 * scale);
-  ctx.restore();
+  // Sword first, body over it: the hilt disappears behind the hero, which
+  // is what makes it read as held rather than stuck on. The blade shows
+  // facing on its own, so there is no crest to fight the highlight.
+  if (!down) drawSword();
+  shadedBall(sx(hero.x), sy(hero.y), B.heroRadius * scale, "#b0e4ff", "#2b7cb2", "#8fd6ff");
   ctx.globalAlpha = 1;
 
   if (down) return;
-
-  // The stack above the head — the genre's signature read.
-  const visible = Math.min(hero.carried, 10);
-  const bx = sx(hero.x);
-  const by = sy(hero.y) - (B.heroRadius + 14) * scale;
-  for (let i = 0; i < visible; i++) {
-    const wobble = Math.sin(i * 1.7 + elapsed * 3) * 2.2 * scale;
-    ctx.beginPath();
-    ctx.arc(bx + wobble, by - i * 7 * scale, 8 * scale, 0, Math.PI * 2);
-    ctx.fillStyle = "#ffcb3d";
-    ctx.fill();
-    ctx.strokeStyle = "#8a6c15";
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-  }
-  if (hero.carried > 0) {
-    ctx.save();
-    ctx.font = "700 15px ui-monospace, Menlo, monospace";
-    ctx.textAlign = "center";
-    ctx.fillStyle = hero.carried >= carryCapacity() ? "#ffcb3d" : "#e8edf5";
-    ctx.fillText(String(hero.carried), bx, by - visible * 7 * scale - 12 * scale);
-    ctx.restore();
-  }
+  drawCarry();
 }
+
+/* ---- Enemies --------------------------------------------------------- */
 
 function drawEnemies() {
   for (const e of enemies) {
-    const grow = Math.min(1, (elapsed - e.born) / 0.18);
-    const r = e.radius * (0.4 + 0.6 * grow);
-    const base = e.boss ? "#c74edb" : "#e45c6b";
-    disc(e.x, e.y, r, e.flash > 0 ? "#ffffff" : base, e.boss ? "#6b2578" : "#8f2733", e.boss ? 4 : 2);
+    if (!onScreen(e.x, e.y, e.radius + 40)) continue;
+    const grow = Math.min(1, (elapsed - e.born) / 0.22);
+    const pop = 0.35 + 0.65 * (1 - Math.pow(1 - grow, 3));
+    const r = e.radius * pop;
+    // A small bob turns a sliding circle into something walking.
+    const bob = Math.sin(elapsed * 7.5 + e.born * 11) * r * 0.08;
+    const y = e.y + bob;
+    const px = sx(e.x), py = sy(y), pr = r * scale;
+
+    contactShadow(e.x, e.y, r, 0.5);
 
     if (e.boss) {
-      const w = e.radius * 2 * scale;
+      const pulse = 0.14 + Math.sin(elapsed * 4) * 0.05;
+      additive(() => glow(px, py, r * 3.2 * scale,
+        "rgba(199,78,219," + pulse.toFixed(3) + ")", "rgba(199,78,219,0)"));
+      // Crown, so a boss is a different silhouette and not just a bigger dot.
+      ctx.fillStyle = "#e6a6f2";
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(px + i * pr * 0.5 - pr * 0.16, py - pr * 0.86);
+        ctx.lineTo(px + i * pr * 0.5, py - pr * 1.4);
+        ctx.lineTo(px + i * pr * 0.5 + pr * 0.16, py - pr * 0.86);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    // Enemies pile onto the hero, and identical fills turn a crowd into one
+    // pink mass. A per-instance tint plus a hard outline keeps the count
+    // readable without lying about anyone's hit radius.
+    const tint = hash2(Math.round(e.born * 1000), 7) < 0.5;
+    if (e.flash > 0) shadedBall(px, py, pr, "#ffffff", "#ffd8de", "#ffffff");
+    else if (e.boss) shadedBall(px, py, pr, "#e79bf5", "#6f2381", "#d98bea");
+    else if (tint) shadedBall(px, py, pr, "#ff98a3", "#9d2836", "#ff8492");
+    else shadedBall(px, py, pr, "#f9808f", "#87202f", "#f47585");
+
+    ctx.strokeStyle = "rgba(22,8,12,0.5)";
+    ctx.lineWidth = Math.max(1.2, pr * 0.09);
+    ctx.beginPath();
+    ctx.arc(px, py, pr - ctx.lineWidth / 2, 0, TAU);
+    ctx.stroke();
+
+    // Eyes track the hero. Two dots are all it takes to make a blob a threat.
+    const a = Math.atan2(hero.y - e.y, hero.x - e.x);
+    const ex = Math.cos(a), ey = -Math.sin(a);
+    const nx = -ey, ny = ex;
+    for (const side of [-1, 1]) {
+      const ox = px + ex * pr * 0.34 + nx * side * pr * 0.34;
+      const oy = py + ey * pr * 0.34 + ny * side * pr * 0.34;
+      ctx.fillStyle = "#0d0f14";
+      ctx.beginPath();
+      ctx.arc(ox, oy, pr * 0.17, 0, TAU);
+      ctx.fill();
+    }
+
+    if (e.boss) {
+      const w = e.radius * 2.2 * scale;
       const frac = Math.max(0, e.health / e.maxHealth);
-      const bx = sx(e.x) - w / 2, by = sy(e.y) - (e.radius + 16) * scale;
-      ctx.fillStyle = "#00000070";
-      ctx.fillRect(bx, by, w, 5);
+      const hx = px - w / 2, hy = py - (e.radius + 24) * scale;
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillRect(hx - 1.5, hy - 1.5, w + 3, 8);
       ctx.fillStyle = "#c74edb";
-      ctx.fillRect(bx, by, w * frac, 5);
+      ctx.fillRect(hx, hy, w * frac, 5);
     }
   }
 }
 
+/* ---- Tokens ---------------------------------------------------------- */
+
 function drawTokens() {
   for (const t of tokens) {
+    if (!onScreen(t.x, t.y, 24)) continue;
     const remaining = B.tokenLifetime - t.age;
     ctx.globalAlpha = remaining < 3 ? Math.max(0.15, remaining / 3) : 1;
-    disc(t.x, t.y, 8, "#ffcb3d", "#8a6c15", 1.5);
+    const px = sx(t.x), py = sy(t.y);
+    // A swarm can leave two hundred of these on the floor at once, so a
+    // loose token gets a flat shadow rather than the gradient one. The
+    // bloom budget is spent on the stack above the head instead, which is
+    // the read that matters.
+    ctx.fillStyle = "rgba(0,0,0,0.38)";
+    ctx.beginPath();
+    ctx.ellipse(px, py + 5 * scale, 9 * scale, 3.4 * scale, 0, 0, TAU);
+    ctx.fill();
+    coin(px, py, 8 * scale, elapsed * 3.4 + t.x * 0.07);
   }
   ctx.globalAlpha = 1;
 }
 
+/* ---- Effects --------------------------------------------------------- */
+
 function drawEffects() {
   for (const f of effects) {
+    if (!onScreen(f.x, f.y, 140)) continue;
     const k = f.life / f.max;
 
     if (f.kind === "swing") {
+      // A wedge that is bright only at its outer edge reads as a sweep;
+      // a flat filled wedge reads as a pie chart.
+      const px = sx(f.x), py = sy(f.y);
+      const R = (B.swordRange + B.heroRadius) * scale;
+      const a0 = -f.facing - B.swordArc / 2, a1 = -f.facing + B.swordArc / 2;
       ctx.save();
-      ctx.globalAlpha = k * 0.85;
+      ctx.globalCompositeOperation = "lighter";
+      const g = ctx.createRadialGradient(px, py, R * 0.3, px, py, R);
+      g.addColorStop(0, "rgba(120,190,255,0)");
+      g.addColorStop(0.78, "rgba(150,215,255," + (0.14 * k).toFixed(3) + ")");
+      g.addColorStop(1, "rgba(232,246,255," + (0.5 * k).toFixed(3) + ")");
+      ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.moveTo(sx(f.x), sy(f.y));
-      ctx.arc(sx(f.x), sy(f.y), B.swordRange * scale, -f.facing - B.swordArc / 2, -f.facing + B.swordArc / 2);
+      ctx.moveTo(px, py);
+      ctx.arc(px, py, R, a0, a1);
       ctx.closePath();
-      ctx.fillStyle = "#dff1ff59";
       ctx.fill();
-      ctx.strokeStyle = "#f2fbffb0";
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(240,250,255," + (0.7 * k).toFixed(3) + ")";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(px, py, R * 0.96, a0, a1);
       ctx.stroke();
       ctx.restore();
+
     } else if (f.kind === "tracer") {
       ctx.save();
+      ctx.globalCompositeOperation = "lighter";
       ctx.globalAlpha = k;
       ctx.strokeStyle = "#a8e8c8";
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 2.5;
       ctx.lineCap = "round";
       ctx.beginPath();
       ctx.moveTo(sx(f.x), sy(f.y));
       ctx.lineTo(sx(f.tx), sy(f.ty));
       ctx.stroke();
+      glow(sx(f.x), sy(f.y), 16 * scale, "rgba(168,232,200,0.5)", "rgba(168,232,200,0)");
+      glow(sx(f.tx), sy(f.ty), 20 * scale, "rgba(220,255,238,0.45)", "rgba(220,255,238,0)");
       ctx.restore();
+
     } else if (f.kind === "bit") {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
       ctx.globalAlpha = k;
       ctx.fillStyle = f.color;
-      const s = 6 * scale * k;
-      ctx.fillRect(sx(f.x) - s / 2, sy(f.y) - s / 2, s, s);
-      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      ctx.arc(sx(f.x), sy(f.y), 3.4 * scale * k + 0.6, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+
     } else if (f.kind === "text") {
       ctx.save();
       ctx.globalAlpha = Math.min(1, k * 2);
       ctx.font = "800 16px ui-sans-serif, -apple-system, system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.letterSpacing = "1px";
+      const px = sx(f.x), py = sy(f.y) - (1 - k) * 22 * scale;
+      ctx.fillStyle = "rgba(0,0,0,0.65)";
+      ctx.fillText(f.text.toUpperCase(), px, py + 1.5);
       ctx.fillStyle = f.color;
-      ctx.fillText(f.text.toUpperCase(), sx(f.x), sy(f.y));
+      ctx.fillText(f.text.toUpperCase(), px, py);
       ctx.restore();
     }
   }
 }
+
+/* ---- Screen ---------------------------------------------------------- */
 
 function drawStick() {
   if (!stick) return;
@@ -1059,14 +1550,31 @@ function drawStick() {
   ctx.fillStyle = "#ffffff0f";
   ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.arc(stick.ox, stick.oy, MAX_TRAVEL, 0, Math.PI * 2);
+  ctx.arc(stick.ox, stick.oy, MAX_TRAVEL, 0, TAU);
   ctx.fill();
   ctx.stroke();
 
   ctx.fillStyle = "#ffffff4d";
   ctx.beginPath();
-  ctx.arc(stick.ox + (dx / dist) * clamped, stick.oy + (dy / dist) * clamped, 26, 0, Math.PI * 2);
+  ctx.arc(stick.ox + (dx / dist) * clamped, stick.oy + (dy / dist) * clamped, 26, 0, TAU);
   ctx.fill();
+  ctx.restore();
+}
+
+// Pulls the eye to the middle of the screen, where the hero is.
+function vignette() {
+  const key = Math.round(vw) + "x" + Math.round(vh) + "|vig";
+  const g = cached(radialCache, key, () => {
+    const grad = ctx.createRadialGradient(0, 0, Math.min(vw, vh) * 0.45,
+                                          0, 0, Math.max(vw, vh) * 0.8);
+    grad.addColorStop(0, "rgba(0,0,0,0)");
+    grad.addColorStop(1, "rgba(0,0,0,0.34)");
+    return grad;
+  });
+  ctx.save();
+  ctx.translate(vw / 2, vh / 2);
+  ctx.fillStyle = g;
+  ctx.fillRect(-vw / 2, -vh / 2, vw, vh);
   ctx.restore();
 }
 
@@ -1079,6 +1587,7 @@ function render() {
   drawHero();
   drawEffects();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  vignette();
   drawStick();
 }
 
