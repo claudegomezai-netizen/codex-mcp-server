@@ -12,8 +12,13 @@ public final class World {
     public private(set) var hero: Hero
     public private(set) var enemies: [Enemy] = []
     public private(set) var tokens: [TokenDrop] = []
+    public private(set) var powerUps: [PowerUpDrop] = []
     public private(set) var plots: [BuildPlot] = []
     public private(set) var director: WaveDirector
+
+    /// Seconds remaining on each running power-up. Instant kinds never appear.
+    public private(set) var activePowerUps: [PowerUpKind: Double] = [:]
+    private var powerUpTimer: Double = 0
 
     public private(set) var upgradeLevels: [UpgradeKind: Int] = [:]
     /// Tokens banked by depositing at the base. Spent on hero upgrades.
@@ -43,6 +48,24 @@ public final class World {
         self.rng = RNG(seed: seed)
         for kind in UpgradeKind.allCases { upgradeLevels[kind] = 0 }
         layoutPlots()
+        powerUpTimer = rng.next(in: balance.powerUpSpawnInterval)
+    }
+
+    // MARK: - Power-ups
+
+    public func powerUpRemaining(_ kind: PowerUpKind) -> Double { activePowerUps[kind] ?? 0 }
+    public func isPowerUpActive(_ kind: PowerUpKind) -> Bool { powerUpRemaining(kind) > 0 }
+
+    /// Grants a boon outright. Internal rather than public: tests reach it
+    /// through `@testable` so they can set up a state that would otherwise
+    /// depend on a lucky spawn, but nothing shipping can hand out free power.
+    func grantPowerUp(_ kind: PowerUpKind) {
+        apply(PowerUpDrop(id: allocateID(), position: hero.position, kind: kind))
+    }
+
+    /// Raises an upgrade without paying for it. Same reasoning as above.
+    func grantUpgradeLevel(_ kind: UpgradeKind) {
+        upgradeLevels[kind, default: 0] += 1
     }
 
     private func allocateID() -> EntityID {
@@ -64,10 +87,24 @@ public final class World {
     public func level(of kind: UpgradeKind) -> Int { upgradeLevels[kind] ?? 0 }
 
     public var heroDamage: Double { economy.heroDamage(level: level(of: .heroDamage)) }
-    public var heroAttackInterval: Double { economy.attackInterval(level: level(of: .attackSpeed)) }
+
+    /// Power-ups multiply the upgraded value rather than replacing it, so a
+    /// boon is always worth the same proportion whatever the build looks like.
+    /// The floor still applies — Frenzy cannot swing faster than the game's
+    /// minimum interval.
+    public var heroAttackInterval: Double {
+        let base = economy.attackInterval(level: level(of: .attackSpeed))
+        guard isPowerUpActive(.frenzy) else { return base }
+        return max(balance.swordMinInterval, base / balance.frenzyAttackSpeedMultiplier)
+    }
+
     public var heroMoveSpeed: Double { economy.moveSpeed(level: level(of: .moveSpeed)) }
     public var carryCapacity: Int { economy.carryCapacity(level: level(of: .carryCapacity)) }
-    public var pickupRadius: Double { economy.pickupRadius(level: level(of: .pickupRadius)) }
+
+    public var pickupRadius: Double {
+        let base = economy.pickupRadius(level: level(of: .pickupRadius))
+        return isPowerUpActive(.magnet) ? base * balance.magnetPickupMultiplier : base
+    }
 
     /// Hero damage per second, ignoring overkill and travel time.
     public var heroDPS: Double { heroDamage / heroAttackInterval }
@@ -110,6 +147,8 @@ public final class World {
         elapsed += dt
 
         stepWaves(dt)
+        // Before the hero moves, so a boon picked up this frame applies to it.
+        stepPowerUps(dt)
         stepHero(dt, input: input)
         stepSword(dt)
         stepTowers(dt)
@@ -176,6 +215,104 @@ public final class World {
     }
 
     // MARK: - Hero
+
+    private func stepPowerUps(_ dt: Double) {
+        // Expire what is running.
+        for (kind, remaining) in activePowerUps {
+            let left = remaining - dt
+            if left <= 0 {
+                activePowerUps[kind] = nil
+                events.append(.powerUpExpired(kind: kind))
+            } else {
+                activePowerUps[kind] = left
+            }
+        }
+
+        // Nothing appears before the run has started, or while the hero is
+        // down — a boon that expires on the respawn timer is a boon wasted.
+        guard !director.isCountingDown, !hero.isDown else { return }
+
+        powerUpTimer -= dt
+        if powerUpTimer <= 0 {
+            powerUpTimer = rng.next(in: balance.powerUpSpawnInterval)
+            spawnPowerUp()
+        }
+
+        // Collect and age out.
+        var collected: [PowerUpDrop] = []
+        for index in powerUps.indices {
+            powerUps[index].age += dt
+            let reach = balance.powerUpRadius + balance.heroRadius
+            if powerUps[index].position.distanceSquared(to: hero.position) <= reach * reach {
+                collected.append(powerUps[index])
+            }
+        }
+
+        for drop in collected { apply(drop) }
+        let collectedIDs = Set(collected.map(\.id))
+        powerUps.removeAll { collectedIDs.contains($0.id) || $0.age >= balance.powerUpGroundLifetime }
+    }
+
+    private func spawnPowerUp() {
+        // Placed around the hero rather than at a fixed point, so collecting
+        // one is always a decision about leaving the fight you are in.
+        let angle = rng.nextAngle()
+        let distance = rng.next(in: balance.powerUpSpawnDistance)
+        let raw = hero.position + Vec2.fromAngle(angle, magnitude: distance)
+        let margin = balance.powerUpRadius + 20
+        let position = Vec2(
+            min(max(raw.x, margin), balance.arenaSize.x - margin),
+            min(max(raw.y, margin), balance.arenaSize.y - margin)
+        )
+
+        let kind = PowerUpKind.allCases[rng.next(in: 0..<PowerUpKind.allCases.count)]
+        powerUps.append(PowerUpDrop(id: allocateID(), position: position, kind: kind))
+        events.append(.powerUpSpawned(position: position, kind: kind))
+    }
+
+    private func apply(_ drop: PowerUpDrop) {
+        let duration = balance.powerUpDurations[drop.kind] ?? 0
+        events.append(.powerUpCollected(position: drop.position, kind: drop.kind, duration: duration))
+
+        guard !drop.kind.isInstant else {
+            detonateSurge(at: hero.position)
+            return
+        }
+
+        // Re-collecting something already running refreshes it rather than
+        // stacking, so a lucky streak cannot compound into a permanent buff.
+        if activePowerUps[drop.kind] == nil,
+            activePowerUps.count >= balance.maxActivePowerUps,
+            let shortest = activePowerUps.min(by: { $0.value < $1.value })?.key
+        {
+            activePowerUps[shortest] = nil
+            events.append(.powerUpExpired(kind: shortest))
+        }
+        activePowerUps[drop.kind] = duration
+    }
+
+    private func detonateSurge(at centre: Vec2) {
+        let damage = heroDamage * balance.surgeDamageMultiplier
+        let radius = balance.surgeRadius
+        events.append(.surgeDetonated(position: centre, radius: radius, damage: damage))
+
+        for index in enemies.indices where enemies[index].isAlive {
+            let reach = radius + enemies[index].radius
+            guard enemies[index].position.distanceSquared(to: centre) <= reach * reach else { continue }
+            enemies[index].health -= damage
+            enemies[index].hitFlash = 0.12
+            let away = (enemies[index].position - centre).normalized
+            enemies[index].knockback = away * (balance.swordKnockback * 2.2)
+            events.append(
+                .enemyHit(
+                    id: enemies[index].id,
+                    position: enemies[index].position,
+                    damage: damage,
+                    killed: !enemies[index].isAlive
+                )
+            )
+        }
+    }
 
     private func stepHero(_ dt: Double, input: Input) {
         hero.invulnerability = max(0, hero.invulnerability - dt)
@@ -332,23 +469,31 @@ public final class World {
 
             // Enemies always walk toward the hero. Towers are damage, not
             // aggro — that keeps the hero the centre of attention.
-            var desired = (heroPosition - enemies[index].position).normalized
+            let pursuit = (heroPosition - enemies[index].position).normalized
 
-            // Cheap separation so a crowd reads as a crowd, not one sprite.
+            // Separation is its own velocity, added after pursuit is scaled to
+            // full speed. Folding it into the heading and normalising the sum
+            // discards its magnitude, which is why crowds used to collapse into
+            // one stack no matter how large the strength was set.
             var push = Vec2.zero
             for other in enemies where other.id != enemies[index].id && other.isAlive {
                 let offset = enemies[index].position - other.position
-                let minimum = enemies[index].radius + other.radius
+                let minimum = (enemies[index].radius + other.radius) * balance.enemyPersonalSpace
                 let distanceSquared = offset.lengthSquared
                 if distanceSquared < minimum * minimum, distanceSquared > 1e-6 {
                     let distance = distanceSquared.squareRoot()
                     push += offset.normalized * ((minimum - distance) / minimum)
                 }
             }
-            desired += push * (balance.enemySeparationStrength / max(1, enemies[index].speed))
 
-            enemies[index].velocity = desired.normalized * enemies[index].speed
+            // Capped so a deep pile shoves at a firm constant rather than
+            // launching whoever ends up in the middle of it.
+            if push.lengthSquared > 1 { push = push.normalized }
+
+            enemies[index].velocity =
+                pursuit * enemies[index].speed + push * balance.enemySeparationSpeed
             enemies[index].position += enemies[index].velocity * dt
+            enemies[index].position = clampToArena(enemies[index].position, radius: enemies[index].radius)
 
             // Contact damage.
             enemies[index].attackCooldown = max(0, enemies[index].attackCooldown - dt)
@@ -362,9 +507,69 @@ public final class World {
                 applyHeroDamage(enemies[index].damage)
             }
         }
+
+        resolveEnemyOverlap()
+    }
+
+    /// Pushes overlapping enemies apart by moving them, not by steering them.
+    ///
+    /// Steering alone cannot clear a pile. An enemy buried in the middle of one
+    /// receives pushes from every side, they cancel to nothing, and it keeps
+    /// driving inward while the crowd closes over it. Only a positional
+    /// constraint fixes that, so the soft push above shapes the approach and
+    /// this guarantees the result.
+    private func clampToArena(_ position: Vec2, radius: Double) -> Vec2 {
+        Vec2(
+            min(max(position.x, radius), balance.arenaSize.x - radius),
+            min(max(position.y, radius), balance.arenaSize.y - radius)
+        )
+    }
+
+    private func resolveEnemyOverlap() {
+        guard enemies.count > 1 else { return }
+
+        for _ in 0..<balance.enemyOverlapIterations {
+            for i in enemies.indices {
+                guard enemies[i].isAlive else { continue }
+                for j in (i + 1)..<enemies.count {
+                    guard enemies[j].isAlive else { continue }
+
+                    let offset = enemies[i].position - enemies[j].position
+                    let minimum = enemies[i].radius + enemies[j].radius
+                    let distanceSquared = offset.lengthSquared
+                    guard distanceSquared < minimum * minimum else { continue }
+
+                    // Exactly coincident pairs have no direction to separate
+                    // along, so pick one deterministically from their ids.
+                    let direction: Vec2
+                    if distanceSquared > 1e-6 {
+                        direction = offset.normalized
+                    } else {
+                        let angle = Double((enemies[i].id &+ enemies[j].id) % 360) * .pi / 180
+                        direction = Vec2.fromAngle(angle)
+                    }
+
+                    let overlap = minimum - distanceSquared.squareRoot()
+                    // Split by size, so a boss shrugs off the minions shoving
+                    // it rather than being herded around by them.
+                    let total = enemies[i].radius + enemies[j].radius
+                    let shareI = enemies[j].radius / total
+                    let correction = direction * overlap
+
+                    enemies[i].position += correction * shareI
+                    enemies[j].position -= correction * (1 - shareI)
+                    enemies[i].position = clampToArena(enemies[i].position, radius: enemies[i].radius)
+                    enemies[j].position = clampToArena(enemies[j].position, radius: enemies[j].radius)
+                }
+            }
+        }
     }
 
     private func applyHeroDamage(_ amount: Double) {
+        // Bulwark absorbs the hit entirely. No invulnerability window is set,
+        // because the whole point is to stand in a swarm and keep swinging.
+        guard !isPowerUpActive(.bulwark) else { return }
+
         hero.health -= amount
         hero.invulnerability = balance.heroInvulnerabilityAfterHit
         events.append(.heroDamaged(position: hero.position, amount: amount, healthAfter: max(0, hero.health)))
@@ -380,14 +585,39 @@ public final class World {
 
     // MARK: - Tokens
 
-    private func dropTokens(at position: Vec2, count: Int) {
-        // Drop as a few clustered pickups rather than one per token, so the
-        // scatter stays readable when a boss pays out a hundred at once.
-        let pickups = min(max(1, count), 8)
-        let per = count / pickups
-        let remainder = count % pickups
+    /// Breaks a payout into coin denominations, largest first.
+    ///
+    /// The returned values sum to exactly `count`: denominations are a
+    /// presentation and chase layer over the same income, not a source of
+    /// more of it, which is what lets the economy guardrails stay meaningful.
+    /// Because the smallest denomination is 1, greedy always lands exactly.
+    func makeChange(for count: Int) -> [(kind: CoinKind, value: Int)] {
+        guard count > 0 else { return [] }
+        var remaining = count
+        var out: [(kind: CoinKind, value: Int)] = []
 
-        for i in 0..<pickups {
+        for kind in CoinKind.allCases.sorted(by: >) {
+            let unit = balance.coinValues[kind] ?? 0
+            guard unit > 0, remaining >= unit else { continue }
+
+            let coins = remaining / unit
+            remaining -= coins * unit
+
+            // Spread across a few pickups, stacking rather than spawning one
+            // per coin when a boss pays out in bulk.
+            let pickups = min(coins, balance.maxPickupsPerDenomination)
+            let per = coins / pickups
+            let extra = coins % pickups
+            for i in 0..<pickups {
+                out.append((kind, (per + (i < extra ? 1 : 0)) * unit))
+            }
+        }
+
+        return out
+    }
+
+    private func dropTokens(at position: Vec2, count: Int) {
+        for coin in makeChange(for: count) {
             let angle = rng.nextAngle()
             let speed = rng.next(in: 60...170)
             tokens.append(
@@ -395,7 +625,8 @@ public final class World {
                     id: allocateID(),
                     position: position,
                     velocity: Vec2.fromAngle(angle, magnitude: speed),
-                    value: per + (i < remainder ? 1 : 0),
+                    kind: coin.kind,
+                    value: coin.value,
                     settleTimer: rng.next(in: 0.12...0.3)
                 )
             )
@@ -440,13 +671,19 @@ public final class World {
                 tokens[index].position += toHero.normalized * (tokens[index].magnetSpeed * dt)
 
                 if toHero.length <= balance.heroRadius {
-                    let space = capacity - hero.carried
-                    let taken = min(space, tokens[index].value)
-                    if taken > 0 {
-                        hero.carried += taken
-                        totalTokensEarned += taken
-                        tokens[index].value -= taken
-                        collected.append((tokens[index].position, taken))
+                    // Coins are taken whole. Nibbling a ten-value coin down to
+                    // three would leave a BTC on the floor worth the same as a
+                    // SAT, and the denomination would stop meaning anything.
+                    // A coin too big for the satchel waits instead, which is
+                    // the clearest argument the Satchel upgrade can make.
+                    if capacity - hero.carried >= tokens[index].value {
+                        hero.carried += tokens[index].value
+                        totalTokensEarned += tokens[index].value
+                        collected.append((tokens[index].position, tokens[index].value))
+                        tokens[index].value = 0
+                    } else {
+                        tokens[index].isMagnetised = false
+                        tokens[index].magnetSpeed = 0
                     }
                 }
             }
@@ -528,12 +765,16 @@ public final class World {
                 survivors.append(enemy)
             } else {
                 enemiesKilled += 1
-                dropTokens(at: enemy.position, count: enemy.tokenValue)
+                // Greed is the one power-up that touches income.
+                let payout = isPowerUpActive(.greed)
+                    ? Int((Double(enemy.tokenValue) * balance.greedTokenMultiplier).rounded())
+                    : enemy.tokenValue
+                dropTokens(at: enemy.position, count: payout)
                 events.append(
                     .enemyDied(
                         position: enemy.position,
                         kind: enemy.kind,
-                        tokensDropped: enemy.tokenValue
+                        tokensDropped: payout
                     )
                 )
             }

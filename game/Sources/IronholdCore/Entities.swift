@@ -57,10 +57,74 @@ public struct Enemy: Sendable, Identifiable {
 
 // MARK: - Dropped tokens
 
+/// Coins come in denominations so a payout reads as treasure rather than as a
+/// pile of identical chips, and so a good kill can visibly produce something
+/// rarer than the last one.
+///
+/// The values are gameplay numbers, not a nod to any real market: the point is
+/// four clearly distinct tiers that make exact change. The largest is
+/// deliberately no more than half of the *base* carry capacity, because coins
+/// are picked up whole — a denomination bigger than an unupgraded satchel
+/// could never be lifted at all. `EconomyTests` holds that invariant.
+public enum CoinKind: String, CaseIterable, Sendable, Comparable {
+    case sat
+    case eth
+    case sol
+    case btc
+
+    /// Short label for the HUD and for floating pickup text.
+    public var ticker: String { rawValue.uppercased() }
+
+    public static func < (a: CoinKind, b: CoinKind) -> Bool {
+        (allCases.firstIndex(of: a) ?? 0) < (allCases.firstIndex(of: b) ?? 0)
+    }
+}
+
+/// Timed boons that appear on the field and are collected by walking over them.
+///
+/// They exist to break the rhythm of a loop that is otherwise very even: the
+/// hero's power only ever changes at a deposit station, so a run has no spikes.
+/// Each of these is a spike, and each pulls the player somewhere they were not
+/// already going.
+public enum PowerUpKind: String, CaseIterable, Sendable {
+    /// Swing far faster for a few seconds.
+    case frenzy
+    /// Enormous pickup radius — the reward is a floor swept clean.
+    case magnet
+    /// Kills pay double while it lasts.
+    case greed
+    /// Immune to contact damage, so a swarm can be waded into.
+    case bulwark
+    /// Instant: a shockwave that damages everything nearby. No duration.
+    case surge
+
+    /// Instant effects resolve on pickup and never enter the active set.
+    public var isInstant: Bool { self == .surge }
+
+    public var label: String {
+        switch self {
+        case .frenzy: return "Frenzy"
+        case .magnet: return "Magnet"
+        case .greed: return "Greed"
+        case .bulwark: return "Bulwark"
+        case .surge: return "Surge"
+        }
+    }
+}
+
+public struct PowerUpDrop: Sendable, Identifiable {
+    public let id: EntityID
+    public var position: Vec2
+    public var kind: PowerUpKind
+    /// Counts up; the drop vanishes once it passes the ground lifetime.
+    public var age: Double = 0
+}
+
 public struct TokenDrop: Sendable, Identifiable {
     public let id: EntityID
     public var position: Vec2
     public var velocity: Vec2
+    public var kind: CoinKind
     public var value: Int
     public var age: Double = 0
     /// Brief delay after dropping before the token can be magnetised, so the
@@ -113,6 +177,12 @@ public enum SimEvent: Sendable {
     case heroDamaged(position: Vec2, amount: Double, healthAfter: Double)
     case heroDowned(position: Vec2, tokensLost: Int)
     case heroRespawned(position: Vec2)
+    case powerUpSpawned(position: Vec2, kind: PowerUpKind)
+    case powerUpCollected(position: Vec2, kind: PowerUpKind, duration: Double)
+    case powerUpExpired(kind: PowerUpKind)
+    case surgeDetonated(position: Vec2, radius: Double, damage: Double)
+    /// Fires once per whole second of the pre-session countdown, ending with 0.
+    case countdownTick(secondsRemaining: Int)
     case waveStarted(wave: Int, isBoss: Bool)
     case waveCleared(wave: Int)
     case upgradePurchased(kind: UpgradeKind, level: Int, cost: Int)

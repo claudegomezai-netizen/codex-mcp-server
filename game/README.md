@@ -24,11 +24,11 @@ playtest headlessly:
 
 | | Swift core | Browser build |
 |---|---|---|
-| First kill | 3.7s | 3.9s |
-| First tower | 13.7s | 13.2s |
-| Upgrades bought | 21 | 20 |
+| First kill | 3.5s | 3.3s |
+| First tower | 12.1s | 14.0s |
+| Upgrades bought | 20 | 20 |
 | Waves reached | 9 | 9 |
-| Deaths | 10 | 10 |
+| Deaths | 10 | 11 |
 
 ## Running the iOS app
 
@@ -61,7 +61,7 @@ SwiftUI in it. It builds and tests on any platform with a Swift toolchain,
 including Linux — which is how the balance was tuned without a device.
 
 ```bash
-swift test            # 28 tests: simulation behaviour + economy guardrails
+swift test            # 42 tests: simulation behaviour + economy guardrails
 swift run IronholdTune # balance inspector — pacing curves and a headless playtest
 ```
 
@@ -88,7 +88,7 @@ module, so app code refers to `World` and friends without an `import`.
 
 ## Status
 
-The simulation core is verified: 28 tests pass against a real Swift 6.3
+The simulation core is verified: 42 tests pass against a real Swift 6.3
 toolchain, and the balance figures in `DESIGN.md` are measured output, not
 estimates.
 
@@ -97,7 +97,7 @@ Linux container with no Apple SDK, so it is syntax-checked only — expect to fi
 some type errors on first build. The simulation underneath it is the part that
 carries real confidence.
 
-**The visual pass described in `DESIGN.md` §7 is browser-only.** Lighting,
+**The visual pass described in `DESIGN.md` §8 is browser-only.** Lighting,
 contact shadows, the drawn sword, tower silhouettes and floor detail all live
 in `web/index.html`. `App/` received the camera-distance change and nothing
 else, so the iOS build still looks like the flat first version.

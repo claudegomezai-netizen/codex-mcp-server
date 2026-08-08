@@ -194,6 +194,41 @@ dodges. The genre is forgiving by design — a death is a pacing beat, not a
 punishment. Health went to 150, invulnerability after a hit to 0.55s, and
 passive regeneration to 3.5/s.
 
+**Crowds collapsed into a single stack, and the code that should have stopped
+it was already there.** I had written down that enemies "do not push each other
+apart." That was wrong — a separation force had existed since the first commit.
+It could not work, for two compounding reasons.
+
+The push was added to the pursuit heading and the sum was then *normalised*:
+
+```swift
+desired += push * (separationStrength / speed)
+velocity = desired.normalized * speed          // magnitude thrown away
+```
+
+Normalising discards the push's magnitude entirely, so no matter how large
+`separationStrength` grew it could only ever *rotate* an enemy — never slow its
+approach, never hold it at a distance. Turning the strength up did nothing,
+which is presumably why it read as absent.
+
+Fixing that alone still failed the test at 0.63 overlap, because of the second
+reason: **steering cannot clear a pile.** An enemy in the middle of one gets
+pushed from every side at once, those pushes cancel to nearly zero, and it
+keeps driving inward while the crowd closes over it. Separation is now a
+velocity added *after* pursuit is scaled to full speed, and a positional
+relaxation pass moves overlapping bodies apart directly, weighted by size so a
+boss shrugs off minions instead of being herded by them.
+
+`SimulationTests.testCrowdedEnemiesDoNotStackOnTopOfEachOther` holds the line
+on both properties: no pair more than half sunk into each other, and the crowd
+occupying real area rather than one point. The second assertion is the one that
+matters — the first can pass on a crowd that is merely *thin*.
+
+The lesson worth keeping: a feature that exists in the code and does nothing is
+harder to find than one that is missing, because reading the code confirms it
+is handled. Only playing it, or testing the property rather than the presence,
+catches it.
+
 ### Where it landed
 
 ```
@@ -210,7 +245,58 @@ tokens earned   2187
 whenever it is not commuting — a genuine worst case. Worth re-checking against a
 real player before touching survivability again.
 
-## 7. How it looks, and why it didn't
+## 7. Coins, boons, and a beat before the bell
+
+Three additions, all constrained by the same rule: the economy in section 5 was
+measured, so nothing here is allowed to quietly move it.
+
+**Denominations.** Kills used to pay in identical chips. They now pay in four
+tiers — SAT 1, ETH 2, SOL 5, BTC 10 — decomposed greedily, largest first. The
+total a kill pays is *exactly* what it paid before; this is making change, not
+extra income, which is what lets every pacing number above stand.
+
+Two constraints fell out of the design rather than being imposed on it. A
+denomination of 1 has to exist or greedy change cannot always land exactly. And
+the largest coin has to fit an *unupgraded* satchel, because coins are picked up
+whole — a coin bigger than base capacity could never be collected at all.
+`EconomyTests` asserts both, plus exact change across every amount from 0 to
+20,000.
+
+Picking up whole rather than partially is the interesting half. Nibbling a
+10-coin down to 3 would leave a BTC on the floor worth the same as a SAT, and
+the denomination would stop meaning anything. Instead a coin too big for the
+satchel is left lying there — which is the clearest argument the Satchel upgrade
+can make, and it costs no tutorial text.
+
+Rarity is emergent, not rolled: a three-token drop *cannot* contain a BTC, and a
+two-hundred token drop *must*. Late waves and bosses therefore produce visibly
+better coins without a separate loot table.
+
+**Power-ups.** Frenzy, Magnet, Greed, Bulwark and an instant Surge, spawning on
+a 16–26 second timer around the hero. They exist because the loop is otherwise
+very even: hero power only ever changes at a deposit station, so a run has no
+spikes. Each of these is a spike, and each pulls the player somewhere they were
+not already going.
+
+Greed is the only one that touches income, and it is safe for a specific
+reason: the pacing guardrail measures a *ratio* between early and late
+purchases, so a uniform income lift shifts every time down together and leaves
+the drift untouched. The tuned curve stays the floor; this is upside on top of
+it. The headless bot never detours to collect one, which means the measured
+numbers in section 5 remain a genuine floor rather than an average.
+
+Multipliers apply to the upgraded value, not in place of it, so a boon is worth
+the same proportion whatever the build looks like — and the game's own limits
+still bind: `testFrenzyCannotSwingFasterThanTheMinimumInterval` pins that.
+
+**The countdown.** Three seconds before wave 1, with the hero already free to
+move and nothing spawning. It is not a pause for its own sake: it is the only
+moment the player can see where the bank is and where the plots are without
+something chasing them. It runs once — `testCountdownDoesNotRepeatBetweenWaves`
+pins the exact tick sequence — and the balance harness sets it to zero so its
+timings stay comparable to the runs recorded above.
+
+## 8. How it looks, and why it didn't
 
 The first playable build was flat discs on a grid, and it read as badly as
 that sounds. Screenshotting it in Chromium made three separate causes
@@ -249,7 +335,7 @@ bloom each. Viewport culling plus a flat shadow on ground tokens brought it
 under 4,000. The bloom budget went to the stack above the head instead, which
 is the read that actually matters.
 
-## 8. Architecture
+## 9. Architecture
 
 `IronholdCore` has no SpriteKit, UIKit, or SwiftUI in it. The whole game —
 combat, economy, wave pacing — is plain Swift that builds and tests on Linux,
@@ -262,7 +348,7 @@ what makes a five-minute session testable in 30 milliseconds.
 Given a seed and an input sequence, a run is reproducible — the balance tests
 depend on it.
 
-## 9. Known gaps
+## 10. Known gaps
 
 - No persistence. A run starts fresh every launch.
 - No offline progression, the genre's other retention pillar.
@@ -278,9 +364,8 @@ depend on it.
   SpriteKit renderer got the camera distance and nothing else, so on iOS the
   game still looks like the flat version. Bringing it across is real work and
   is not done.
-- Enemies do not push each other apart, so a crowd stacks into one spot. The
-  outline and per-instance tint make that readable, but the underlying pile-up
-  is a simulation gap, not a drawing one.
+- ~~Enemies do not push each other apart~~ — this was wrong. Separation was
+  there all along; it just could not work. See section 6.
 - `web/index.html` duplicates the simulation in JavaScript so the game is
   playable without a Mac. Its behaviour was verified against the Swift core
   (first kill 3.9s vs 3.7s, first tower 13.2s vs 13.7s, same wave and death

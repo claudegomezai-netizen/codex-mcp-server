@@ -155,6 +155,66 @@ final class EconomyTests: XCTestCase {
         )
     }
 
+    // MARK: - Coin denominations
+
+    /// Denominations are a presentation layer over the same income. The moment
+    /// making change stops being exact, every pacing number above becomes a
+    /// lie, so this is checked across the whole range a run can produce —
+    /// including boss payouts in the thousands.
+    func testMakingChangeAlwaysPaysExactlyTheDropAmount() {
+        let world = World(balance: Balance(), seed: 1)
+        for amount in Array(0...400) + [512, 999, 1_500, 4_096, 20_000] {
+            let coins = world.makeChange(for: amount)
+            let paid = coins.reduce(0) { $0 + $1.value }
+            XCTAssertEqual(paid, amount, "change for \(amount) paid \(paid)")
+        }
+    }
+
+    /// Coins are picked up whole, so a denomination larger than an unupgraded
+    /// satchel could never be lifted and would sit on the floor forever.
+    func testNoDenominationIsTooBigForAnUnupgradedSatchel() {
+        let balance = Balance()
+        let largest = balance.coinValues.values.max() ?? 0
+        XCTAssertGreaterThan(largest, 0)
+        XCTAssertLessThanOrEqual(
+            largest, balance.baseCarryCapacity / 2,
+            "the biggest coin does not comfortably fit a starting satchel, so it can never be collected"
+        )
+        XCTAssertTrue(
+            balance.coinValues.values.contains(1),
+            "without a coin worth 1, some payouts cannot be made exactly"
+        )
+    }
+
+    /// A boss dropping hundreds should still scatter a handful of pickups, not
+    /// carpet the floor.
+    func testLargePayoutsStayReadable() {
+        let world = World(balance: Balance(), seed: 1)
+        let coins = world.makeChange(for: 5_000)
+        XCTAssertLessThanOrEqual(
+            coins.count, CoinKind.allCases.count * Balance().maxPickupsPerDenomination,
+            "a boss payout is spawning more pickups than the cap allows"
+        )
+        XCTAssertEqual(coins.reduce(0) { $0 + $1.value }, 5_000)
+    }
+
+    /// Rarity should come out of the maths rather than a separate roll: a
+    /// small early payout cannot contain a top-tier coin, a large one must.
+    func testHigherDenominationsOnlyAppearInLargerPayouts() {
+        let world = World(balance: Balance(), seed: 1)
+        let balance = Balance()
+        let top = CoinKind.allCases.max { (balance.coinValues[$0] ?? 0) < (balance.coinValues[$1] ?? 0) }!
+
+        XCTAssertFalse(
+            world.makeChange(for: 3).contains { $0.kind == top },
+            "a three-token drop produced a top-tier coin"
+        )
+        XCTAssertTrue(
+            world.makeChange(for: 200).contains { $0.kind == top },
+            "a two-hundred token drop produced no top-tier coin"
+        )
+    }
+
     func testBossWaveCadence() {
         let economy = Economy()
         XCTAssertFalse(economy.isBossWave(1))

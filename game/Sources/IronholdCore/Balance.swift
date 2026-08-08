@@ -118,6 +118,62 @@ public struct Balance: Sendable {
     /// Tokens left on the ground this long despawn, so the field stays clean.
     public var tokenLifetime: Double = 45
 
+    // MARK: - Power-ups
+
+    /// Gap between power-up spawns, randomised inside this range. Wide enough
+    /// that one is a small event rather than background noise.
+    public var powerUpSpawnInterval: ClosedRange<Double> = 16...26
+    /// How long an uncollected power-up sits on the ground before fading.
+    public var powerUpGroundLifetime: Double = 14
+    /// Spawn ring around the hero: far enough to be a detour worth deciding on,
+    /// close enough to be reachable before it expires.
+    public var powerUpSpawnDistance: ClosedRange<Double> = 170...330
+    public var powerUpRadius: Double = 26
+    /// Most a player can have running at once, so the screen stays readable.
+    public var maxActivePowerUps: Int = 3
+
+    public var powerUpDurations: [PowerUpKind: Double] = [
+        .frenzy: 8,
+        .magnet: 9,
+        .greed: 10,
+        .bulwark: 6,
+        .surge: 0,
+    ]
+
+    public var frenzyAttackSpeedMultiplier: Double = 2.4
+    public var magnetPickupMultiplier: Double = 4.0
+    /// Greed is the only power-up that touches income. It is deliberately a
+    /// flat multiplier on a small slice of run time: because the pacing
+    /// guardrail measures a *ratio* between early and late purchases, a
+    /// uniform income lift shifts every time down together and leaves the
+    /// drift untouched. The tuned curve stays the floor, and this is upside.
+    public var greedTokenMultiplier: Double = 2.0
+    public var surgeRadius: Double = 260
+    /// Multiple of the hero's current hit, so a shockwave keeps pace with the
+    /// build instead of turning into a wet slap by wave 20.
+    public var surgeDamageMultiplier: Double = 9
+
+    // MARK: - Coins
+
+    /// What each denomination is worth. A payout is broken into these exactly,
+    /// largest first, so the total a kill pays is unchanged — this is making
+    /// change, not extra income, and the pacing guardrails still hold.
+    ///
+    /// `1` must be present or a payout could not always be made exactly, and
+    /// the largest must fit inside `baseCarryCapacity` since coins are picked
+    /// up whole. Both are asserted in `EconomyTests`.
+    public var coinValues: [CoinKind: Int] = [
+        .sat: 1,
+        .eth: 2,
+        .sol: 5,
+        .btc: 10,
+    ]
+
+    /// Cap on separate pickups of any one denomination, so a boss paying out
+    /// several hundred scatters a readable handful rather than fifty coins.
+    /// Anything beyond this is stacked into the pickups already being made.
+    public var maxPickupsPerDenomination: Int = 3
+
     // MARK: - Depositing
 
     /// Tokens per second drained from the stack into a build plot.
@@ -142,11 +198,27 @@ public struct Balance: Sendable {
     public var enemyRadius: Double = 22
     public var enemyAttackInterval: Double = 1.1
     public var enemyBaseTokenDrop: Int = 5
-    /// Enemies push each other apart so they never stack into one sprite.
-    public var enemySeparationStrength: Double = 140
+    /// Sideways speed enemies use to shove each other apart, in units/second.
+    /// This is deliberately *not* folded into the pursuit direction: adding it
+    /// to the desired heading and then normalising throws the magnitude away,
+    /// so the push could only ever rotate an enemy, never hold it at a
+    /// distance, and a crowd collapsed into one stack. It is applied as its
+    /// own velocity instead.
+    public var enemySeparationSpeed: Double = 155
+    /// How much room an enemy wants beyond simply not overlapping. At 1.0 they
+    /// settle exactly touching, which still reads as a single mass.
+    public var enemyPersonalSpace: Double = 1.35
+    /// Relaxation passes used to shove overlapping enemies apart. One pass
+    /// leaves deep piles partly resolved because separating one pair can push
+    /// a body into another; two converges in practice at this density.
+    public var enemyOverlapIterations: Int = 2
 
     // MARK: - Waves
 
+    /// A beat before wave 1 so the player can read the arena — where the bank
+    /// is, where the plots are — before anything is chasing them. Set to 0 in
+    /// the balance harness so its timings stay comparable to earlier runs.
+    public var startCountdown: Double = 3
     public var waveDuration: Double = 30
     public var waveBreak: Double = 5
     /// Sized so spawn rate slightly exceeds the opening kill rate — otherwise

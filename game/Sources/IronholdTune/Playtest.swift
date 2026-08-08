@@ -25,6 +25,12 @@ enum Playtest {
         seed: UInt64 = 7,
         traceUntil: Double = 0
     ) -> Report {
+        // The pre-session countdown is fixed dead time before anything can
+        // happen. Excluding it keeps every timing below comparable to the runs
+        // recorded in DESIGN.md rather than shifting them all by three seconds.
+        var balance = balance
+        balance.startCountdown = 0
+
         let world = World(balance: balance, seed: seed)
         var report = Report()
         let tick = 1.0 / 60.0

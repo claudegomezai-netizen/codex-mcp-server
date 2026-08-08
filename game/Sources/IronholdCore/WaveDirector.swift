@@ -11,6 +11,11 @@ public struct WaveDirector: Sendable {
     public private(set) var isBreak: Bool = true
     public private(set) var spawnsRemaining: Int = 0
 
+    /// Seconds left on the pre-session countdown. Zero once the run is live.
+    public private(set) var countdown: Double
+    public var isCountingDown: Bool { countdown > 0 }
+
+    private var lastCountdownSecond: Int = -1
     private var spawnAccumulator: Double = 0
     private var breakTimer: Double
 
@@ -19,9 +24,11 @@ public struct WaveDirector: Sendable {
 
     public init(economy: Economy) {
         self.economy = economy
-        // Only a brief beat before wave 1 — the opening seconds are the most
-        // expensive seconds in a casual game, so the fight starts almost at once.
-        self.breakTimer = 0.8
+        self.countdown = economy.balance.startCountdown
+        // Wave 1 follows the countdown immediately. The opening seconds are the
+        // most expensive seconds in a casual game, so once the count hits zero
+        // there is no further dead air.
+        self.breakTimer = 0
     }
 
     public var isBossWave: Bool { economy.isBossWave(wave) }
@@ -29,6 +36,19 @@ public struct WaveDirector: Sendable {
     /// Advances wave state and returns how many enemies to spawn this tick.
     public mutating func step(_ dt: Double, activeEnemyCount: Int) -> (spawns: Int, events: [SimEvent]) {
         var events: [SimEvent] = []
+
+        // A beat before the first wave, so the player can see the arena — where
+        // the bank is, where the plots are — before anything is chasing them.
+        // Nothing spawns during it, but the hero can already move.
+        if countdown > 0 {
+            countdown = max(0, countdown - dt)
+            let shown = Int(countdown.rounded(.up))
+            if shown != lastCountdownSecond {
+                lastCountdownSecond = shown
+                events.append(.countdownTick(secondsRemaining: shown))
+            }
+            return (0, events)
+        }
 
         if isBreak {
             breakTimer -= dt

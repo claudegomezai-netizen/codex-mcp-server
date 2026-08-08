@@ -229,6 +229,219 @@ final class SimulationTests: XCTestCase {
         XCTAssertLessThanOrEqual(peak, balance.maxConcurrentEnemies)
     }
 
+    /// A crowd converging on a stationary hero should ring him, not pile onto
+    /// one point. This failed for a long time without anyone noticing: the
+    /// separation push was added to the pursuit heading and the sum was then
+    /// normalised, which threw the push's magnitude away, so it could only
+    /// rotate an enemy and never hold it at a distance.
+    func testCrowdedEnemiesDoNotStackOnTopOfEachOther() {
+        var balance = Balance()
+        // A hero who cannot kill anything, so pressure only accumulates.
+        balance.swordBaseDamage = 0
+        balance.heroMaxHealth = 1_000_000
+        balance.baseSpawnsPerWave = 40
+        let world = World(balance: balance, seed: 77)
+
+        var remaining = 25.0
+        while remaining > 0 {
+            world.step(tick, input: World.Input())
+            _ = world.drainEvents()
+            remaining -= tick
+        }
+
+        let crowd = world.enemies.filter(\.isAlive)
+        XCTAssertGreaterThan(crowd.count, 12, "not enough enemies to be a crowd")
+
+        // Measure the worst overlap anywhere in the crowd.
+        var deepestOverlap = 0.0
+        for i in crowd.indices {
+            for j in (i + 1)..<crowd.count {
+                let gap = crowd[i].position.distance(to: crowd[j].position)
+                let touching = crowd[i].radius + crowd[j].radius
+                deepestOverlap = max(deepestOverlap, (touching - gap) / touching)
+            }
+        }
+
+        XCTAssertLessThan(
+            deepestOverlap, 0.5,
+            "two enemies are more than half sunk into each other — the crowd is stacking, not spreading"
+        )
+
+        // And the crowd should occupy real area rather than one point.
+        let centre = crowd.reduce(Vec2.zero) { $0 + $1.position } / Double(crowd.count)
+        let spread = crowd.map { $0.position.distance(to: centre) }.max() ?? 0
+        XCTAssertGreaterThan(
+            spread, balance.enemyRadius * 3,
+            "the whole crowd fits inside a few body widths — it is a stack, not a swarm"
+        )
+    }
+
+    // MARK: - Session start
+
+    func testCountdownHoldsTheFieldEmptyThenReleasesWaveOne() {
+        var balance = Balance()
+        balance.startCountdown = 3
+        let world = World(balance: balance, seed: 5)
+
+        // Nothing may spawn while the count is running.
+        var events = run(world, seconds: 2.5)
+        XCTAssertTrue(world.enemies.isEmpty, "enemies spawned during the countdown")
+        XCTAssertEqual(world.director.wave, 0, "wave 1 started before the countdown finished")
+        XCTAssertFalse(
+            events.contains { if case .waveStarted = $0 { return true } else { return false } },
+            "a wave started during the countdown"
+        )
+
+        // The count itself should be visible, one event per whole second.
+        let ticks = events.compactMap { event -> Int? in
+            if case .countdownTick(let n) = event { return n } else { return nil }
+        }
+        XCTAssertEqual(ticks, [3, 2, 1], "countdown did not tick down once per second")
+
+        // And the run must actually start after it.
+        events = run(world, seconds: 3)
+        XCTAssertTrue(
+            events.contains { if case .waveStarted(let wave, _) = $0 { return wave == 1 } else { return false } },
+            "wave 1 never started after the countdown"
+        )
+        XCTAssertFalse(world.enemies.isEmpty, "no enemies after the countdown released")
+    }
+
+    /// The countdown is a one-off, not a pause before every wave.
+    func testCountdownDoesNotRepeatBetweenWaves() {
+        var balance = Balance()
+        balance.startCountdown = 2
+        balance.waveDuration = 2
+        balance.waveBreak = 0.3
+        let world = World(balance: balance, seed: 6)
+
+        let events = run(world, seconds: 40)
+        let ticks = events.compactMap { event -> Int? in
+            if case .countdownTick(let n) = event { return n } else { return nil }
+        }
+        let waves = events.filter { if case .waveStarted = $0 { return true } else { return false } }
+
+        XCTAssertGreaterThan(waves.count, 2, "not enough waves to tell")
+        // Exactly one run of the count, ending on the zero that means "go".
+        XCTAssertEqual(ticks, [2, 1, 0], "the countdown ran again between waves")
+    }
+
+    // MARK: - Power-ups
+
+    func testPowerUpsAppearAndAreCollectedByWalkingOverThem() {
+        var balance = Balance()
+        balance.powerUpSpawnInterval = 1...1.5
+        balance.startCountdown = 0      // nothing spawns during the count
+        let world = World(balance: balance, seed: 11)
+
+        // Let one appear, then walk to it.
+        run(world, seconds: 3)
+        guard let target = world.powerUps.first else {
+            return XCTFail("no power-up appeared")
+        }
+
+        let events = run(world, seconds: 8) { world in
+            self.steerToward(target.position, from: world)
+        }
+
+        XCTAssertTrue(
+            events.contains { if case .powerUpCollected = $0 { return true } else { return false } },
+            "walked onto a power-up and nothing was collected"
+        )
+    }
+
+    /// Frenzy has to actually change the swing, and hand it back afterwards.
+    func testFrenzySpeedsUpSwingsAndThenWearsOff() {
+        var balance = Balance()
+        balance.powerUpSpawnInterval = 999...999   // only what the test grants
+        balance.powerUpDurations[.frenzy] = 1.0
+        let world = World(balance: balance, seed: 12)
+
+        let normal = world.heroAttackInterval
+        world.grantPowerUp(.frenzy)
+        let hasted = world.heroAttackInterval
+        XCTAssertLessThan(hasted, normal, "frenzy did not speed up the swing")
+
+        run(world, seconds: 2)
+        XCTAssertEqual(
+            world.heroAttackInterval, normal, accuracy: 1e-9,
+            "frenzy never wore off"
+        )
+    }
+
+    /// A power-up must never break the game's own floor.
+    func testFrenzyCannotSwingFasterThanTheMinimumInterval() {
+        var balance = Balance()
+        balance.powerUpSpawnInterval = 999...999
+        let world = World(balance: balance, seed: 13)
+        for _ in 0..<200 { world.grantUpgradeLevel(.attackSpeed) }
+        world.grantPowerUp(.frenzy)
+        XCTAssertGreaterThanOrEqual(world.heroAttackInterval, balance.swordMinInterval)
+    }
+
+    func testBulwarkStopsContactDamage() {
+        var balance = Balance()
+        balance.powerUpSpawnInterval = 999...999
+        balance.heroInvulnerabilityAfterHit = 0
+        let world = World(balance: balance, seed: 14)
+
+        // Get into a fight first, then confirm nothing lands.
+        run(world, seconds: 12)
+        world.grantPowerUp(.bulwark)
+        let before = world.hero.health
+        let events = run(world, seconds: 4)
+
+        // Health can only go up here — passive regen keeps ticking, so this
+        // asserts nothing was subtracted rather than that nothing changed.
+        XCTAssertGreaterThanOrEqual(world.hero.health, before, "bulwark let damage through")
+        XCTAssertFalse(
+            events.contains { if case .heroDamaged = $0 { return true } else { return false } },
+            "bulwark let a damage event through"
+        )
+    }
+
+    /// Surge is instant, so it must resolve on pickup and never sit in the
+    /// active set holding a slot.
+    func testSurgeResolvesImmediatelyAndDoesNotLinger() {
+        var balance = Balance()
+        balance.powerUpSpawnInterval = 999...999
+        let world = World(balance: balance, seed: 15)
+        run(world, seconds: 14)
+        XCTAssertFalse(world.enemies.isEmpty, "no enemies to hit")
+
+        let healthBefore = world.enemies.map(\.health).reduce(0, +)
+        world.grantPowerUp(.surge)
+
+        XCTAssertFalse(world.isPowerUpActive(.surge), "an instant power-up entered the active set")
+        let healthAfter = world.enemies.map(\.health).reduce(0, +)
+        XCTAssertLessThan(healthAfter, healthBefore, "surge did no damage")
+    }
+
+    func testActivePowerUpsAreCapped() {
+        var balance = Balance()
+        balance.powerUpSpawnInterval = 999...999
+        balance.maxActivePowerUps = 2
+        let world = World(balance: balance, seed: 16)
+
+        world.grantPowerUp(.frenzy)
+        world.grantPowerUp(.magnet)
+        world.grantPowerUp(.greed)
+        world.grantPowerUp(.bulwark)
+
+        XCTAssertLessThanOrEqual(world.activePowerUps.count, 2)
+    }
+
+    /// Nothing should be dropped while the player cannot go and get it.
+    func testNoPowerUpsSpawnDuringTheCountdown() {
+        var balance = Balance()
+        balance.startCountdown = 4
+        balance.powerUpSpawnInterval = 0.2...0.3
+        let world = World(balance: balance, seed: 17)
+
+        run(world, seconds: 3.5)
+        XCTAssertTrue(world.powerUps.isEmpty, "a power-up appeared before the run started")
+    }
+
     // MARK: - Hero survival
 
     func testHeroGoesDownAndRespawnsAtBase() {

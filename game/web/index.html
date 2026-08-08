@@ -98,6 +98,21 @@
 
   .towers { font: var(--label); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 
+  /* Active boons. The bar drains, so time remaining is read without numbers. */
+  .buffs { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+  .buff {
+    display: flex; align-items: center; gap: 6px;
+    font: var(--label); letter-spacing: 0.1em; text-transform: uppercase;
+  }
+  .buff .bar {
+    width: 44px; height: 4px; border-radius: 99px;
+    background: #ffffff1f; overflow: hidden;
+  }
+  .buff .bar i {
+    display: block; height: 100%; width: 100%;
+    background: currentColor; transform-origin: right;
+  }
+
   button {
     pointer-events: auto;
     font: 700 13px/1 ui-sans-serif, -apple-system, system-ui, sans-serif;
@@ -192,6 +207,21 @@
     100% { opacity: 0; }
   }
 
+  /* Countdown digits are bigger and land inside one second, so each number
+     clears before the next arrives instead of cross-fading into a smear. */
+  .banner.count, .banner.go {
+    font-size: clamp(64px, 22vw, 130px);
+    letter-spacing: 0;
+  }
+  .banner.count.show, .banner.go.show { animation: count 1s ease-out forwards; }
+  .banner.go { color: var(--jade); font-size: clamp(44px, 15vw, 92px); }
+  @keyframes count {
+    0%   { opacity: 0; transform: translate(-50%, -50%) scale(1.5); }
+    18%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    70%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(0.86); }
+  }
+
   .hint {
     position: fixed;
     left: 50%;
@@ -224,6 +254,7 @@
     <div class="stack-right">
       <div class="carry" id="carry">0/20</div>
       <div class="towers" id="towers">0 towers</div>
+      <div class="buffs" id="buffs"></div>
       <button id="toggle" type="button">Upgrades</button>
     </div>
   </div>
@@ -291,6 +322,32 @@ const B = {
   tokenMagnetAcceleration: 1800,
   tokenLifetime: 45,
 
+  // Power-ups. They exist to break the rhythm of a loop that is otherwise very
+  // even: hero power only ever changes at a deposit station, so a run has no
+  // spikes. Each of these is a spike, and each pulls the player somewhere they
+  // were not already going.
+  powerUpSpawnInterval: [16, 26],
+  powerUpGroundLifetime: 14,
+  powerUpSpawnDistance: [170, 330],
+  powerUpRadius: 26,
+  maxActivePowerUps: 3,
+  powerUpDurations: { frenzy: 8, magnet: 9, greed: 10, bulwark: 6, surge: 0 },
+  frenzyAttackSpeedMultiplier: 2.4,
+  magnetPickupMultiplier: 4.0,
+  // Greed is the only power-up that touches income. Because the pacing
+  // guardrail measures a ratio between early and late purchases, a uniform
+  // income lift shifts every time down together and leaves the drift alone.
+  greedTokenMultiplier: 2.0,
+  surgeRadius: 260,
+  surgeDamageMultiplier: 9,
+
+  // What each denomination is worth. A payout is broken into these exactly,
+  // largest first, so a kill pays the same total as before — this is making
+  // change, not extra income. 1 must be present for change to be exact, and
+  // the largest must fit an unupgraded satchel since coins are taken whole.
+  coinValues: { sat: 1, eth: 2, sol: 5, btc: 10 },
+  maxPickupsPerDenomination: 3,
+
   depositRate: 14,
   plotInteractionRadius: 62,
 
@@ -306,8 +363,13 @@ const B = {
   enemyRadius: 22,
   enemyAttackInterval: 1.1,
   enemyBaseTokenDrop: 5,
-  enemySeparationStrength: 140,
+  enemySeparationSpeed: 155,
+  enemyPersonalSpace: 1.35,
+  enemyOverlapIterations: 2,
 
+  // A beat before wave 1 so the player can read the arena — where the bank is,
+  // where the plots are — before anything is chasing them.
+  startCountdown: 3,
   waveDuration: 30,
   waveBreak: 5,
   baseSpawnsPerWave: 24,
@@ -344,10 +406,20 @@ const priceOf   = k => Math.round(UPGRADES.find(u => u.key === k).price * B.cost
 const towerCost = level => Math.round(B.towerBuildCost * B.costGrowth ** level);
 
 const heroDamage     = () => B.swordBaseDamage * B.powerGrowth ** lv.heroDamage;
-const attackInterval = () => Math.max(B.swordMinInterval, B.swordBaseInterval / B.attackSpeedGrowth ** lv.attackSpeed);
 const moveSpeed      = () => Math.min(B.heroMaxMoveSpeed, B.heroBaseMoveSpeed + B.heroMoveSpeedPerLevel * lv.moveSpeed);
 const carryCapacity  = () => B.baseCarryCapacity + B.carryCapacityPerLevel * lv.carryCapacity;
-const pickupRadius   = () => B.basePickupRadius + B.pickupRadiusPerLevel * lv.pickupRadius;
+
+// Power-ups multiply the upgraded value rather than replacing it, so a boon is
+// worth the same proportion whatever the build looks like. The game's own
+// floor still applies — Frenzy cannot beat the minimum swing interval.
+const attackInterval = () => {
+  const base = Math.max(B.swordMinInterval, B.swordBaseInterval / B.attackSpeedGrowth ** lv.attackSpeed);
+  return active.frenzy > 0 ? Math.max(B.swordMinInterval, base / B.frenzyAttackSpeedMultiplier) : base;
+};
+const pickupRadius = () => {
+  const base = B.basePickupRadius + B.pickupRadiusPerLevel * lv.pickupRadius;
+  return active.magnet > 0 ? base * B.magnetPickupMultiplier : base;
+};
 
 const towerDamage   = level => (level > 0 ? B.towerBaseDamage * B.powerGrowth ** (level - 1) : 0);
 const towerInterval = level => Math.max(B.towerMinInterval, B.towerBaseInterval / 1.03 ** Math.max(0, level - 1));
@@ -377,7 +449,25 @@ const hero = {
   respawn: 0,
 };
 
-let enemies = [], tokens = [], effects = [];
+// Cosmetic only: which denominations are in the satchel, so the stack above
+// the head shows the actual mix rather than ten identical discs. The
+// simulation still tracks a single carried total.
+const carriedCoins = [];
+function trimCarriedCoins() {
+  let total = 0;
+  for (const k of carriedCoins) total += B.coinValues[k];
+  while (carriedCoins.length && total > hero.carried) {
+    total -= B.coinValues[carriedCoins.shift()];
+  }
+}
+
+let enemies = [], tokens = [], effects = [], powerUps = [];
+// Seconds remaining on each running boon. Instant kinds never land here.
+const active = { frenzy: 0, magnet: 0, greed: 0, bulwark: 0 };
+const POWER_KINDS = ["frenzy", "magnet", "greed", "bulwark", "surge"];
+let powerUpTimer = B.powerUpSpawnInterval[0] +
+  Math.random() * (B.powerUpSpawnInterval[1] - B.powerUpSpawnInterval[0]);
+
 let bank = 0, elapsed = 0, killed = 0, depositRemainder = 0;
 let shake = 0, camX = B.base.x, camY = B.base.y;
 
@@ -388,7 +478,10 @@ for (let i = 0; i < B.stationCount; i++) {
   plots.push({ x: p.x, y: p.y, level: 0, deposited: 0, cooldown: 0, pulse: 0 });
 }
 
-const director = { wave: 0, inBreak: true, breakTimer: 0.8, remaining: 0, acc: 0, timeInWave: 0 };
+const director = {
+  wave: 0, inBreak: true, breakTimer: 0, remaining: 0, acc: 0, timeInWave: 0,
+  countdown: B.startCountdown, lastCount: -1,
+};
 
 /* ---- Input ---------------------------------------------------------- */
 
@@ -494,6 +587,19 @@ function spawnEnemy() {
 
 function stepWaves(dt) {
   const d = director;
+
+  // A beat before the first wave. Nothing spawns, but the hero can already
+  // move, so the arena can be read before anything is chasing them.
+  if (d.countdown > 0) {
+    d.countdown = Math.max(0, d.countdown - dt);
+    const shown = Math.ceil(d.countdown);
+    if (shown !== d.lastCount) {
+      d.lastCount = shown;
+      announce(shown > 0 ? String(shown) : "Go", false, shown === 0);
+    }
+    return;
+  }
+
   if (d.inBreak) {
     d.breakTimer -= dt;
     if (d.breakTimer > 0) return;
@@ -532,6 +638,10 @@ function stepWaves(dt) {
 }
 
 function damageHero(amount) {
+  // Bulwark absorbs the hit entirely. No invulnerability window is set,
+  // because the whole point is to stand in a swarm and keep swinging.
+  if (active.bulwark > 0) return;
+
   hero.health -= amount;
   hero.invuln = B.heroInvulnerabilityAfterHit;
   shake = Math.min(26, shake + 5);
@@ -543,6 +653,79 @@ function damageHero(amount) {
   hero.carried -= lost;
   shake = Math.min(26, shake + 20);
   if (lost > 0) effects.push({ kind: "text", text: `-${lost}`, x: hero.x, y: hero.y, life: 0.9, max: 0.9, color: "#e45c6b" });
+}
+
+function stepPowerUps(dt) {
+  for (const k of Object.keys(active)) {
+    if (active[k] > 0) active[k] = Math.max(0, active[k] - dt);
+  }
+
+  // Nothing appears before the run starts, or while the hero is down — a boon
+  // that expires on the respawn timer is a boon wasted.
+  if (director.countdown > 0 || hero.respawn > 0) return;
+
+  powerUpTimer -= dt;
+  if (powerUpTimer <= 0) {
+    const [lo, hi] = B.powerUpSpawnInterval;
+    powerUpTimer = lo + Math.random() * (hi - lo);
+    spawnPowerUp();
+  }
+
+  for (const p of powerUps) p.age += dt;
+
+  const reach = B.powerUpRadius + B.heroRadius;
+  const taken = powerUps.filter(p =>
+    (p.x - hero.x) ** 2 + (p.y - hero.y) ** 2 <= reach * reach);
+  for (const p of taken) applyPowerUp(p);
+
+  powerUps = powerUps.filter(p => !taken.includes(p) && p.age < B.powerUpGroundLifetime);
+}
+
+function spawnPowerUp() {
+  // Placed around the hero rather than at a fixed point, so collecting one is
+  // always a decision about leaving the fight you are in.
+  const a = Math.random() * Math.PI * 2;
+  const [lo, hi] = B.powerUpSpawnDistance;
+  const d = lo + Math.random() * (hi - lo);
+  const m = B.powerUpRadius + 20;
+  powerUps.push({
+    x: Math.min(Math.max(hero.x + Math.cos(a) * d, m), B.arena - m),
+    y: Math.min(Math.max(hero.y + Math.sin(a) * d, m), B.arena - m),
+    kind: POWER_KINDS[Math.floor(Math.random() * POWER_KINDS.length)],
+    age: 0,
+  });
+}
+
+function applyPowerUp(p) {
+  if (p.kind === "surge") { detonateSurge(hero.x, hero.y); return; }
+
+  // Re-collecting something already running refreshes it rather than stacking,
+  // so a lucky streak cannot compound into a permanent buff.
+  const running = Object.keys(active).filter(k => active[k] > 0);
+  if (active[p.kind] <= 0 && running.length >= B.maxActivePowerUps) {
+    let shortest = running[0];
+    for (const k of running) if (active[k] < active[shortest]) shortest = k;
+    active[shortest] = 0;
+  }
+  active[p.kind] = B.powerUpDurations[p.kind];
+  announce(POWER_STYLE[p.kind].label, false, false);
+}
+
+function detonateSurge(x, y) {
+  const damage = heroDamage() * B.surgeDamageMultiplier;
+  effects.push({ kind: "surge", x, y, life: 0.45, max: 0.45 });
+  shake = Math.min(26, shake + 18);
+
+  for (const e of enemies) {
+    const reach = B.surgeRadius + e.radius;
+    if ((e.x - x) ** 2 + (e.y - y) ** 2 > reach * reach) continue;
+    e.health -= damage;
+    e.flash = 0.14;
+    const dx = e.x - x, dy = e.y - y;
+    const len = Math.hypot(dx, dy) || 1;
+    e.kx = (dx / len) * B.swordKnockback * 2.2;
+    e.ky = (dy / len) * B.swordKnockback * 2.2;
+  }
 }
 
 function stepHero(dt) {
@@ -647,12 +830,14 @@ function stepEnemies(dt) {
     const len = Math.hypot(dx, dy) || 1;
     dx /= len; dy /= len;
 
-    // Cheap separation so a crowd reads as a crowd, not one sprite.
+    // Separation is its own velocity, added after pursuit is scaled to full
+    // speed. Folding it into the heading and normalising the sum throws its
+    // magnitude away, which is why crowds used to collapse into one stack.
     let px = 0, py = 0;
     for (const o of enemies) {
       if (o === e) continue;
       const ox = e.x - o.x, oy = e.y - o.y;
-      const min = e.radius + o.radius;
+      const min = (e.radius + o.radius) * B.enemyPersonalSpace;
       const d2 = ox * ox + oy * oy;
       if (d2 < min * min && d2 > 0.001) {
         const d = Math.sqrt(d2);
@@ -660,12 +845,13 @@ function stepEnemies(dt) {
         py += (oy / d) * ((min - d) / min);
       }
     }
-    const push = B.enemySeparationStrength / Math.max(1, e.speed);
-    dx += px * push; dy += py * push;
+    const pl = Math.hypot(px, py);
+    if (pl > 1) { px /= pl; py /= pl; }
 
-    const n = Math.hypot(dx, dy) || 1;
-    e.x += (dx / n) * e.speed * dt;
-    e.y += (dy / n) * e.speed * dt;
+    e.x += (dx * e.speed + px * B.enemySeparationSpeed) * dt;
+    e.y += (dy * e.speed + py * B.enemySeparationSpeed) * dt;
+    e.x = Math.min(Math.max(e.x, e.radius), B.arena - e.radius);
+    e.y = Math.min(Math.max(e.y, e.radius), B.arena - e.radius);
 
     e.attackCooldown = Math.max(0, e.attackCooldown - dt);
     const contact = e.radius + B.heroRadius;
@@ -675,21 +861,88 @@ function stepEnemies(dt) {
       damageHero(e.damage);
     }
   }
+
+  resolveEnemyOverlap();
+}
+
+// Steering alone cannot clear a pile: an enemy buried in the middle receives
+// pushes from every side, they cancel to nothing, and it keeps driving inward
+// while the crowd closes over it. Only moving bodies directly fixes that.
+function resolveEnemyOverlap() {
+  if (enemies.length < 2) return;
+
+  for (let pass = 0; pass < B.enemyOverlapIterations; pass++) {
+    for (let i = 0; i < enemies.length; i++) {
+      const a = enemies[i];
+      for (let j = i + 1; j < enemies.length; j++) {
+        const b = enemies[j];
+        const ox = a.x - b.x, oy = a.y - b.y;
+        const min = a.radius + b.radius;
+        const d2 = ox * ox + oy * oy;
+        if (d2 >= min * min) continue;
+
+        let nx, ny;
+        if (d2 > 1e-6) {
+          const d = Math.sqrt(d2);
+          nx = ox / d; ny = oy / d;
+        } else {
+          // Exactly coincident: no direction to separate along, so pick one.
+          const ang = ((i + j) % 360) * Math.PI / 180;
+          nx = Math.cos(ang); ny = Math.sin(ang);
+        }
+
+        const overlap = min - Math.sqrt(d2);
+        // Split by size, so a boss shrugs off minions rather than being
+        // herded around by them.
+        const shareA = b.radius / min;
+        a.x += nx * overlap * shareA;
+        a.y += ny * overlap * shareA;
+        b.x -= nx * overlap * (1 - shareA);
+        b.y -= ny * overlap * (1 - shareA);
+
+        a.x = Math.min(Math.max(a.x, a.radius), B.arena - a.radius);
+        a.y = Math.min(Math.max(a.y, a.radius), B.arena - a.radius);
+        b.x = Math.min(Math.max(b.x, b.radius), B.arena - b.radius);
+        b.y = Math.min(Math.max(b.y, b.radius), B.arena - b.radius);
+      }
+    }
+  }
+}
+
+// Denominations, biggest first. Because the smallest is worth 1, greedy always
+// lands on the exact payout — the total a kill pays is unchanged.
+const COIN_ORDER = Object.keys(B.coinValues).sort((a, b) => B.coinValues[b] - B.coinValues[a]);
+
+function makeChange(count) {
+  if (count <= 0) return [];
+  let remaining = count;
+  const out = [];
+
+  for (const kind of COIN_ORDER) {
+    const unit = B.coinValues[kind];
+    if (remaining < unit) continue;
+
+    const coins = Math.floor(remaining / unit);
+    remaining -= coins * unit;
+
+    // Stack rather than spawning one pickup per coin when a boss pays in bulk.
+    const pickups = Math.min(coins, B.maxPickupsPerDenomination);
+    const per = Math.floor(coins / pickups);
+    const extra = coins % pickups;
+    for (let i = 0; i < pickups; i++) {
+      out.push({ kind, value: (per + (i < extra ? 1 : 0)) * unit });
+    }
+  }
+  return out;
 }
 
 function dropTokens(x, y, count) {
-  // A few clustered pickups, not one per token — a boss paying out a
-  // hundred at once still has to read.
-  const pickups = Math.min(Math.max(1, count), 8);
-  const per = Math.floor(count / pickups);
-  const extra = count % pickups;
-
-  for (let i = 0; i < pickups; i++) {
+  for (const coin of makeChange(count)) {
     const a = Math.random() * Math.PI * 2;
     const s = 60 + Math.random() * 110;
     tokens.push({
       x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
-      value: per + (i < extra ? 1 : 0),
+      kind: coin.kind, value: coin.value,
       age: 0, settle: 0.12 + Math.random() * 0.18, magnet: false, speed: 0,
     });
   }
@@ -723,8 +976,18 @@ function stepTokens(dt) {
       t.y += (dy / (dist || 1)) * t.speed * dt;
 
       if (dist <= B.heroRadius) {
-        const taken = Math.min(cap - hero.carried, t.value);
-        if (taken > 0) { hero.carried += taken; t.value -= taken; }
+        // Coins are taken whole. Nibbling a ten-value coin down to three
+        // would leave a BTC on the floor worth the same as a SAT, and the
+        // denomination would stop meaning anything. A coin too big for the
+        // satchel waits — the clearest argument the Satchel upgrade can make.
+        if (cap - hero.carried >= t.value) {
+          hero.carried += t.value;
+          carriedCoins.push(t.kind);
+          t.value = 0;
+        } else {
+          t.magnet = false;
+          t.speed = 0;
+        }
       }
     }
   }
@@ -789,7 +1052,9 @@ function cleanup() {
   for (const e of enemies) {
     if (e.health > 0) { survivors.push(e); continue; }
     killed++;
-    dropTokens(e.x, e.y, e.drop);
+    // Greed is the one power-up that touches income.
+    const payout = active.greed > 0 ? Math.round(e.drop * B.greedTokenMultiplier) : e.drop;
+    dropTokens(e.x, e.y, payout);
     burst(e.x, e.y, e.boss ? "#c74edb" : "#e45c6b", e.boss ? 20 : 6);
     if (e.boss) shake = Math.min(26, shake + 14);
   }
@@ -808,12 +1073,15 @@ function stepEffects(dt) {
 function step(dt) {
   elapsed += dt;
   stepWaves(dt);
+  // Before the hero moves, so a boon picked up this frame applies to it.
+  stepPowerUps(dt);
   stepHero(dt);
   stepSword(dt);
   stepTowers(dt);
   stepEnemies(dt);
   stepTokens(dt);
   stepDeposits(dt);
+  trimCarriedCoins();
   cleanup();
   stepEffects(dt);
 }
@@ -962,18 +1230,38 @@ function ring(x, y, r, color, width, dash) {
   ctx.restore();
 }
 
-// A coin seen almost edge-on, spinning. Width oscillates; the highlight
-// rides the face so the spin is legible at eight pixels across.
-function coin(px, py, r, spin) {
+// Denominations are told apart by colour and size, not by a symbol — at eight
+// pixels across a glyph is mud. Higher tiers are bigger and brighter, so a
+// good drop is legible from the other side of the arena.
+// Each boon gets its own colour and a glyph drawn from primitives, so they are
+// told apart at a glance across the arena rather than read.
+const POWER_STYLE = {
+  frenzy:  { label: "Frenzy",  color: "#ff8f4d", glow: "255,143,77" },
+  magnet:  { label: "Magnet",  color: "#6bc7ff", glow: "107,199,255" },
+  greed:   { label: "Greed",   color: "#ffcb3d", glow: "255,203,61" },
+  bulwark: { label: "Bulwark", color: "#9fe870", glow: "159,232,112" },
+  surge:   { label: "Surge",   color: "#c74edb", glow: "199,78,219" },
+};
+
+const COIN_STYLE = {
+  sat: { top: "#f2cd9a", mid: "#c98a4b", low: "#6d4213", edge: "#4a2c0c", r: 7.0, ring: false },
+  eth: { top: "#d7e0f8", mid: "#8fa2d8", low: "#404e7c", edge: "#28304d", r: 8.2, ring: false },
+  sol: { top: "#b4f4e6", mid: "#4fd6c0", low: "#166b5f", edge: "#0d4239", r: 9.4, ring: true },
+  btc: { top: "#ffeaa0", mid: "#ffcb3d", low: "#a9760c", edge: "#6d4c07", r: 10.8, ring: true },
+};
+
+// A coin seen almost edge-on, spinning. Width oscillates; the highlight rides
+// the face so the spin is legible at eight pixels across.
+function coin(px, py, r, spin, kind) {
+  const st = COIN_STYLE[kind] || COIN_STYLE.sat;
   // Floored well above zero: a coin caught exactly edge-on is a sliver, and
   // a floor covered in slivers reads as scattered sticks, not treasure.
   const rx = Math.max(r * 0.38, Math.abs(Math.cos(spin)) * r);
-  const key = Math.round(r) + "|coin";
-  const g = cached(linearCache, key, () => {
+  const g = cached(linearCache, Math.round(r) + "|" + (kind || "sat"), () => {
     const grad = ctx.createLinearGradient(0, -Math.round(r), 0, Math.round(r));
-    grad.addColorStop(0, "#ffeaa0");
-    grad.addColorStop(0.45, "#ffcb3d");
-    grad.addColorStop(1, "#a9760c");
+    grad.addColorStop(0, st.top);
+    grad.addColorStop(0.45, st.mid);
+    grad.addColorStop(1, st.low);
     return grad;
   });
   ctx.save();
@@ -982,9 +1270,16 @@ function coin(px, py, r, spin) {
   ctx.beginPath();
   ctx.ellipse(0, 0, rx, r, 0, 0, TAU);
   ctx.fill();
-  ctx.strokeStyle = "#6d4c07";
+  ctx.strokeStyle = st.edge;
   ctx.lineWidth = Math.max(1, r * 0.15);
   ctx.stroke();
+  if (st.ring && rx > r * 0.5) {
+    ctx.strokeStyle = "rgba(255,255,255,0.4)";
+    ctx.lineWidth = Math.max(1, r * 0.12);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, rx * 0.52, r * 0.52, 0, 0, TAU);
+    ctx.stroke();
+  }
   if (rx > r * 0.35) {
     ctx.fillStyle = "rgba(255,255,255,0.55)";
     ctx.beginPath();
@@ -1187,7 +1482,8 @@ function drawStations() {
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  for (let i = 0; i < 3; i++) coin(bx, by + (6 - i * 6) * scale, 9 * scale, 0);
+  const vaultCoins = ["sat", "sol", "btc"];
+  for (let i = 0; i < 3; i++) coin(bx, by + (6 - i * 6) * scale, 9 * scale, 0, vaultCoins[i]);
   label("BANK", bankPos.x, bankPos.y - r - 12, "#ffcb3d");
 
   // ---- Plots ----------------------------------------------------------
@@ -1331,12 +1627,17 @@ function drawCarry() {
       "rgba(255,203,61,0.28)", "rgba(255,203,61,0)"));
   }
 
+  // Shows the newest coins, so a lucky BTC is visible on the stack instead of
+  // being averaged into a column of identical discs.
+  const shown = carriedCoins.slice(-visible);
   for (let i = 0; i < visible; i++) {
+    const kind = shown[i] || "sat";
+    const st = COIN_STYLE[kind];
     const wobble = Math.sin(i * 1.7 + elapsed * 3) * 2.2 * scale;
     ctx.save();
     ctx.translate(bx + wobble, by - i * 7 * scale);
     ctx.scale(1, 0.62);
-    coin(0, 0, 9 * scale, 0);
+    coin(0, 0, st.r * 1.05 * scale, 0, kind);
     ctx.restore();
   }
 
@@ -1367,6 +1668,22 @@ function drawHero() {
   if (!down) drawSword();
   shadedBall(sx(hero.x), sy(hero.y), B.heroRadius * scale, "#b0e4ff", "#2b7cb2", "#8fd6ff");
   ctx.globalAlpha = 1;
+
+  // Bulwark is worn, not just listed in the HUD — you can see you are safe.
+  if (active.bulwark > 0 && !down) {
+    const r = B.heroRadius * 1.5 * scale;
+    const fading = active.bulwark < 1.5;
+    ctx.save();
+    ctx.globalAlpha = fading ? 0.45 + Math.abs(Math.sin(elapsed * 14)) * 0.45 : 1;
+    additive(() => glow(sx(hero.x), sy(hero.y), r * 1.7,
+      "rgba(159,232,112,0.2)", "rgba(159,232,112,0)"));
+    ctx.strokeStyle = "rgba(159,232,112,0.85)";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(sx(hero.x), sy(hero.y), r, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   if (down) return;
   drawCarry();
@@ -1451,17 +1768,106 @@ function drawTokens() {
     const remaining = B.tokenLifetime - t.age;
     ctx.globalAlpha = remaining < 3 ? Math.max(0.15, remaining / 3) : 1;
     const px = sx(t.x), py = sy(t.y);
+    const r = (COIN_STYLE[t.kind] || COIN_STYLE.sat).r * scale;
     // A swarm can leave two hundred of these on the floor at once, so a
     // loose token gets a flat shadow rather than the gradient one. The
     // bloom budget is spent on the stack above the head instead, which is
     // the read that matters.
     ctx.fillStyle = "rgba(0,0,0,0.38)";
     ctx.beginPath();
-    ctx.ellipse(px, py + 5 * scale, 9 * scale, 3.4 * scale, 0, 0, TAU);
+    ctx.ellipse(px, py + r * 0.62, r * 1.1, r * 0.42, 0, 0, TAU);
     ctx.fill();
-    coin(px, py, 8 * scale, elapsed * 3.4 + t.x * 0.07);
+    coin(px, py, r, elapsed * 3.4 + t.x * 0.07, t.kind);
   }
   ctx.globalAlpha = 1;
+}
+
+/* ---- Power-ups ------------------------------------------------------- */
+
+function drawPowerUpGlyph(kind, r) {
+  ctx.strokeStyle = "#0f141b";
+  ctx.fillStyle = "#0f141b";
+  ctx.lineWidth = Math.max(1.6, r * 0.16);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+
+  if (kind === "frenzy") {                       // lightning bolt
+    ctx.moveTo(r * 0.22, -r * 0.55);
+    ctx.lineTo(-r * 0.18, r * 0.05);
+    ctx.lineTo(r * 0.08, r * 0.05);
+    ctx.lineTo(-r * 0.22, r * 0.58);
+    ctx.stroke();
+  } else if (kind === "magnet") {                // horseshoe
+    ctx.arc(0, r * 0.05, r * 0.42, Math.PI, 0);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.42, r * 0.05); ctx.lineTo(-r * 0.42, r * 0.45);
+    ctx.moveTo(r * 0.42, r * 0.05); ctx.lineTo(r * 0.42, r * 0.45);
+    ctx.stroke();
+  } else if (kind === "greed") {                 // stacked coins
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.ellipse(0, i * r * 0.28, r * 0.44, r * 0.15, 0, 0, TAU);
+      ctx.stroke();
+    }
+  } else if (kind === "bulwark") {               // shield
+    ctx.moveTo(0, -r * 0.55);
+    ctx.lineTo(r * 0.42, -r * 0.3);
+    ctx.lineTo(r * 0.42, r * 0.12);
+    ctx.quadraticCurveTo(r * 0.42, r * 0.5, 0, r * 0.6);
+    ctx.quadraticCurveTo(-r * 0.42, r * 0.5, -r * 0.42, r * 0.12);
+    ctx.lineTo(-r * 0.42, -r * 0.3);
+    ctx.closePath();
+    ctx.stroke();
+  } else {                                        // surge — radiating burst
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * TAU;
+      ctx.moveTo(Math.cos(a) * r * 0.2, Math.sin(a) * r * 0.2);
+      ctx.lineTo(Math.cos(a) * r * 0.56, Math.sin(a) * r * 0.56);
+    }
+    ctx.stroke();
+  }
+}
+
+function drawPowerUps() {
+  for (const p of powerUps) {
+    if (!onScreen(p.x, p.y, 60)) continue;
+    const st = POWER_STYLE[p.kind];
+    const px = sx(p.x), py = sy(p.y);
+    const r = B.powerUpRadius * scale;
+
+    // Fades and shrinks as it runs out, so the urgency is visible from afar.
+    const left = B.powerUpGroundLifetime - p.age;
+    ctx.globalAlpha = left < 3.5 ? Math.max(0.2, left / 3.5) : 1;
+
+    const bob = Math.sin(elapsed * 3 + p.x * 0.02) * 4 * scale;
+    const pulse = 1 + Math.sin(elapsed * 5 + p.y * 0.02) * 0.06;
+
+    ctx.fillStyle = "rgba(0,0,0,0.4)";
+    ctx.beginPath();
+    ctx.ellipse(px, py + r * 0.7, r * 0.72, r * 0.26, 0, 0, TAU);
+    ctx.fill();
+
+    additive(() => glow(px, py + bob, r * 2.6,
+      "rgba(" + st.glow + ",0.34)", "rgba(" + st.glow + ",0)"));
+
+    ctx.save();
+    ctx.translate(px, py + bob);
+    ctx.scale(pulse, pulse);
+    // Rounded capsule badge rather than a bare disc, so a boon never reads
+    // as another coin lying on the floor.
+    polygon(0, 0, r * 0.82, 6, elapsed * 0.5);
+    ctx.fillStyle = st.color;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.75)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    drawPowerUpGlyph(p.kind, r * 0.82);
+    ctx.restore();
+
+    ctx.globalAlpha = 1;
+  }
 }
 
 /* ---- Effects --------------------------------------------------------- */
@@ -1494,6 +1900,22 @@ function drawEffects() {
       ctx.beginPath();
       ctx.arc(px, py, R * 0.96, a0, a1);
       ctx.stroke();
+      ctx.restore();
+
+    } else if (f.kind === "surge") {
+      // An expanding ring rather than a filled blast, so the wave front is
+      // legible and the enemies it is hitting stay visible through it.
+      const e = 1 - Math.pow(1 - (1 - k), 2);
+      const R = B.surgeRadius * scale * e;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = "rgba(216,140,240," + (0.85 * k).toFixed(3) + ")";
+      ctx.lineWidth = 6 * scale * k + 1.5;
+      ctx.beginPath();
+      ctx.arc(sx(f.x), sy(f.y), R, 0, TAU);
+      ctx.stroke();
+      glow(sx(f.x), sy(f.y), R * 0.9,
+        "rgba(199,78,219," + (0.16 * k).toFixed(3) + ")", "rgba(199,78,219,0)");
       ctx.restore();
 
     } else if (f.kind === "tracer") {
@@ -1583,6 +2005,7 @@ function render() {
   drawGround();
   drawStations();
   drawTokens();
+  drawPowerUps();
   drawEnemies();
   drawHero();
   drawEffects();
@@ -1601,6 +2024,7 @@ const el = {
   bankWrap: document.getElementById("bankWrap"),
   carry: document.getElementById("carry"),
   towers: document.getElementById("towers"),
+  buffs: document.getElementById("buffs"),
   rows: document.getElementById("rows"),
   drawer: document.getElementById("drawer"),
   toggle: document.getElementById("toggle"),
@@ -1630,12 +2054,38 @@ const rowEls = UPGRADES.map(u => {
   return { def: u, node: b, lv: b.querySelector(".lv"), price: b.querySelector(".price") };
 });
 
-function announce(text, boss) {
+function announce(text, boss, go) {
   el.banner.textContent = text;
   el.banner.classList.toggle("boss", !!boss);
+  el.banner.classList.toggle("count", !go && /^\d+$/.test(text));
+  el.banner.classList.toggle("go", !!go);
   el.banner.classList.remove("show");
   void el.banner.offsetWidth;
   el.banner.classList.add("show");
+}
+
+// Rows are created once per kind and shown or hidden, so a boon refreshing
+// does not rebuild the DOM ten times a second.
+const buffEls = {};
+for (const kind of Object.keys(POWER_STYLE)) {
+  if (kind === "surge") continue;              // instant, never runs
+  const row = document.createElement("div");
+  row.className = "buff";
+  row.style.color = POWER_STYLE[kind].color;
+  row.innerHTML = `<span>${POWER_STYLE[kind].label}</span><span class="bar"><i></i></span>`;
+  row.style.display = "none";
+  el.buffs.appendChild(row);
+  buffEls[kind] = { row, fill: row.querySelector("i") };
+}
+
+function syncBuffs() {
+  for (const kind of Object.keys(buffEls)) {
+    const left = active[kind];
+    const entry = buffEls[kind];
+    if (left <= 0) { entry.row.style.display = "none"; continue; }
+    entry.row.style.display = "flex";
+    entry.fill.style.transform = `scaleX(${left / B.powerUpDurations[kind]})`;
+  }
 }
 
 let hudTimer = 0;
@@ -1657,6 +2107,8 @@ function syncHUD() {
 
   const built = plots.filter(p => p.level > 0).length;
   el.towers.textContent = built === 1 ? "1 tower" : `${built} towers`;
+
+  syncBuffs();
 
   for (const r of rowEls) {
     const cost = priceOf(r.def.key);
