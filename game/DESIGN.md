@@ -335,7 +335,35 @@ bloom each. Viewport culling plus a flat shadow on ground tokens brought it
 under 4,000. The bloom budget went to the stack above the head instead, which
 is the read that actually matters.
 
-## 9. Architecture
+## 9. What persists, and what deliberately does not
+
+The browser build saves the things you *bought* — upgrade levels, tower levels,
+the bank — and nothing else. The wave you reached, the enemies on the field and
+the coins in your satchel all reset.
+
+That split is a design choice, not a shortcut. Restoring a run mid-fight would
+make reloading the page a way to escape a bad wave. And dropping a returning
+player straight back into wave 40 is a worse opening than wave 1 with the towers
+they earned still standing — the towers are the reward, and starting a fresh
+wave 1 next to them is the moment that shows it.
+
+The save is validated rather than trusted: every value is coerced to an integer
+and clamped to a sane range, an unknown version is ignored, and anything
+unparseable starts a clean run. Six corrupt payloads — wrong types, junk text,
+a bare `null`, negative and `1e308` values, an array where an object belongs —
+were each seeded before page load and each produced a clean, finite world. The
+whole path also degrades silently when storage throws, which is the normal case
+in private browsing and some embedded frames.
+
+**Offline earnings are missing on purpose.** Paying out for time away needs an
+income rate, and that rate has to survive the pacing model in section 5 — a
+wrong number there quietly breaks the curve the entire economy is tuned around,
+in the direction that is hardest to notice. It belongs with that model and its
+guardrail test, not bolted onto the save file. This is the genre's other
+retention pillar and it is still a gap; it is just not a gap worth filling
+carelessly.
+
+## 10. Architecture
 
 `IronholdCore` has no SpriteKit, UIKit, or SwiftUI in it. The whole game —
 combat, economy, wave pacing — is plain Swift that builds and tests on Linux,
@@ -348,10 +376,11 @@ what makes a five-minute session testable in 30 milliseconds.
 Given a seed and an input sequence, a run is reproducible — the balance tests
 depend on it.
 
-## 10. Known gaps
+## 11. Known gaps
 
-- No persistence. A run starts fresh every launch.
-- No offline progression, the genre's other retention pillar.
+- No offline progression, the genre's other retention pillar. Section 9 says
+  why it is absent rather than merely unfinished.
+- Persistence is browser-only; the Swift core has no save/load.
 - Towers are stat-based by choice: fixed plots, the decision is which to build
   and when to level. The spatial alternative — towers that hold ground and let
   you push out, as in Kingdom — is the more interesting design and remains
@@ -360,10 +389,13 @@ depend on it.
 - No audio. `GameModel.playCollect()` is the hook, deliberately silent: firing a
   haptic per token would buzz continuously during a swarm.
 - The SpriteKit layer has never been compiled. See the README.
-- **The visual pass in section 7 landed in the browser build only.** The
-  SpriteKit renderer got the camera distance and nothing else, so on iOS the
-  game still looks like the flat version. Bringing it across is real work and
-  is not done.
+- **Everything since the first build landed in the browser only** — the second
+  visual pass, coin denominations, power-ups, the countdown and persistence.
+  The SpriteKit renderer has the camera distance and nothing else, so on iOS
+  the game still looks and plays like the first version. The *simulation*
+  changes (separation, denominations, power-ups, countdown) are all in
+  `IronholdCore` and tested, so the iOS build inherits those; it is the
+  rendering and the save layer that lag.
 - ~~Enemies do not push each other apart~~ — this was wrong. Separation was
   there all along; it just could not work. See section 6.
 - `web/index.html` duplicates the simulation in JavaScript so the game is

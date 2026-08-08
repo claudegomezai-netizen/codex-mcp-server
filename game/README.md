@@ -13,6 +13,10 @@ three separate economy failures the tooling caught and how they were fixed.
 `web/index.html` is a self-contained playable build — open the file, no server,
 no build step. Drag to move on touch, WASD or arrows on desktop.
 
+Upgrade levels, tower levels and the bank persist across reloads. The wave, the
+field and your satchel do not — see `DESIGN.md` §9 for why that split. "Reset
+progress" at the bottom of the Upgrades drawer wipes the save.
+
 It is a **second implementation of the same rules**, ported to JavaScript so the
 game can be played without a Mac. `Balance.swift` remains the source of truth;
 the constants in `web/index.html` sit in one marked block at the top so
@@ -46,10 +50,18 @@ Drag anywhere to move; the joystick appears under your thumb. The sword swings
 on its own. Kill things, let the tokens pile above your head, then walk to a
 station on the ring:
 
-- **BANK** (amber ring) — converts the stack into hero upgrades. Open
+- **BANK** (gold vault) — converts the stack into hero upgrades. Open
   **Upgrades** in the top right to spend.
 - **Tower plots** (dashed rings) — pour the stack in to raise an archer tower,
-  and again to level it up. Towers fire on their own.
+  and again to level it up. Towers fire on their own, and grow taller.
+
+Coins come in four denominations — SAT, ETH, SOL, BTC — worth 1, 2, 5 and 10.
+Bigger ones are bigger and brighter on the floor. They are picked up **whole**,
+so a coin too big for your satchel is left lying there until you upgrade it.
+
+Coloured hexagons are power-ups: **Frenzy** (faster swings), **Magnet** (huge
+pickup radius), **Greed** (double payouts), **Bulwark** (immune while it lasts)
+and **Surge** (instant shockwave). They expire, so decide quickly.
 
 The counter above your head turns amber when the satchel is full. That is the
 game telling you to buy a bigger one.

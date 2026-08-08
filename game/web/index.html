@@ -185,6 +185,18 @@
   }
   .row.can .price { color: var(--gold); }
 
+  .reset {
+    align-self: flex-end;
+    margin-top: 2px;
+    padding: 6px 11px;
+    font-size: 11px;
+    background: transparent;
+    border-color: #ffffff14;
+    color: var(--muted);
+  }
+  .reset:hover { background: #e45c6b1f; border-color: #e45c6b55; color: var(--text); }
+  .reset.arm { background: #e45c6b2e; border-color: #e45c6b; color: var(--text); }
+
   /* ---- Centre messaging ---------------------------------------------- */
 
   .banner {
@@ -264,9 +276,10 @@
   <div class="drawer" id="drawer">
     <div class="drawer-head">
       <span class="eyebrow">Hero upgrades</span>
-      <span class="note">Deposit at the gold ring to earn</span>
+      <span class="note">Deposit at the bank to earn</span>
     </div>
     <div id="rows"></div>
+    <button id="reset" class="reset" type="button">Reset progress</button>
   </div>
 </div>
 
@@ -757,6 +770,9 @@ function stepHero(dt) {
   hero.y = Math.min(Math.max(hero.y, B.heroRadius), B.arena - B.heroRadius);
 }
 
+const MAX_DAMAGE_NUMBERS = 16;
+let damageNumbers = 0;
+
 function resolveSwing() {
   const dmg = heroDamage();
   const half = B.swordArc / 2;
@@ -775,6 +791,21 @@ function resolveSwing() {
     const len = Math.hypot(dx, dy) || 1;
     e.kx = (dx / len) * B.swordKnockback;
     e.ky = (dy / len) * B.swordKnockback;
+
+    // Only the sword gets numbers. Towers fire constantly and would bury the
+    // screen; the sword is the player's own doing, which is what is worth
+    // reading. Capped so a wide swing through a crowd stays legible.
+    if (damageNumbers < MAX_DAMAGE_NUMBERS) {
+      damageNumbers++;
+      effects.push({
+        kind: "dmg", text: String(Math.round(dmg)),
+        x: e.x + (Math.random() - 0.5) * 14,
+        y: e.y + e.radius * 0.6,
+        vy: 46 + Math.random() * 16,
+        life: 0.62, max: 0.62,
+        color: e.boss ? "#f0b6ff" : "#ffe9ec",
+      });
+    }
   }
 }
 
@@ -812,7 +843,18 @@ function stepTowers(dt) {
     p.cooldown = towerInterval(p.level);
     target.health -= towerDamage(p.level);
     target.flash = 0.1;
-    effects.push({ kind: "tracer", x: p.x, y: p.y, tx: target.x, ty: target.y, life: 0.12, max: 0.12 });
+
+    // The shot still resolves instantly — the arrow is a visual travelling to
+    // where the target was, not a projectile with its own hit test. Making it
+    // real would change tower DPS and invalidate the tuned economy; making it
+    // visible costs nothing and is most of what the eye wanted.
+    const d = Math.hypot(target.x - p.x, target.y - p.y) || 1;
+    effects.push({
+      kind: "arrow", x: p.x, y: p.y + 44, tx: target.x, ty: target.y,
+      angle: Math.atan2(target.y - (p.y + 44), target.x - p.x),
+      life: Math.min(0.26, d / 1500), max: Math.min(0.26, d / 1500),
+    });
+    effects.push({ kind: "muzzle", x: p.x, y: p.y + 44, life: 0.1, max: 0.1 });
   }
 }
 
@@ -1052,6 +1094,13 @@ function cleanup() {
   for (const e of enemies) {
     if (e.health > 0) { survivors.push(e); continue; }
     killed++;
+    // A corpse that pops out of existence makes a kill feel like a
+    // bookkeeping event. This one collapses and fades, purely visually — it
+    // has no health, no collision, and takes no part in the simulation.
+    effects.push({
+      kind: "corpse", x: e.x, y: e.y, radius: e.radius,
+      boss: e.boss, life: 0.34, max: 0.34,
+    });
     // Greed is the one power-up that touches income.
     const payout = active.greed > 0 ? Math.round(e.drop * B.greedTokenMultiplier) : e.drop;
     dropTokens(e.x, e.y, payout);
@@ -1066,8 +1115,11 @@ function stepEffects(dt) {
     f.life -= dt;
     if (f.kind === "bit") { f.x += f.vx * dt; f.y += f.vy * dt; f.vx *= 0.92; f.vy *= 0.92; }
     if (f.kind === "text") f.y += 52 * dt;
+    if (f.kind === "dmg") { f.y += f.vy * dt; f.vy *= 0.94; }
   }
-  effects = effects.filter(f => f.life > 0);
+  const kept = effects.filter(f => f.life > 0);
+  damageNumbers = kept.reduce((n, f) => n + (f.kind === "dmg" ? 1 : 0), 0);
+  effects = kept;
 }
 
 function step(dt) {
@@ -1207,6 +1259,57 @@ function hash2(i, j) {
 function onScreen(x, y, pad) {
   const px = sx(x), py = sy(y), m = (pad || 40) * scale;
   return px > -m && px < vw + m && py > -m && py < vh + m;
+}
+
+// A body with a head reads as a character; a single ball reads as a marble.
+// Both are stacked inside the same radius the hit test uses, so the silhouette
+// never promises reach the simulation does not have.
+function figureBody(px, py, r, top, bottom, edge) {
+  const g = cached(linearCache, Math.round(r) + "|" + top + "|" + bottom, () => {
+    const grad = ctx.createLinearGradient(0, -Math.round(r), 0, Math.round(r));
+    grad.addColorStop(0, top);
+    grad.addColorStop(1, bottom);
+    return grad;
+  });
+  ctx.save();
+  ctx.translate(px, py);
+
+  // Torso: a rounded wedge, wider at the shoulders than the hem.
+  const w = r * 0.86, hemW = r * 0.62, topY = -r * 0.06, botY = r * 0.9;
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(-w, topY + r * 0.2);
+  ctx.quadraticCurveTo(-w, topY - r * 0.28, 0, topY - r * 0.3);
+  ctx.quadraticCurveTo(w, topY - r * 0.28, w, topY + r * 0.2);
+  ctx.lineTo(hemW, botY);
+  ctx.quadraticCurveTo(0, botY + r * 0.22, -hemW, botY);
+  ctx.closePath();
+  ctx.fill();
+  if (edge) {
+    ctx.strokeStyle = edge;
+    ctx.lineWidth = Math.max(1.2, r * 0.08);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function figureHead(px, py, r, fill, edge) {
+  ctx.save();
+  ctx.translate(px, py - r * 0.5);
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.5, 0, TAU);
+  ctx.fill();
+  if (edge) {
+    ctx.strokeStyle = edge;
+    ctx.lineWidth = Math.max(1.2, r * 0.08);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "rgba(255,255,255,0.22)";
+  ctx.beginPath();
+  ctx.ellipse(-r * 0.16, -r * 0.18, r * 0.18, r * 0.12, -0.5, 0, TAU);
+  ctx.fill();
+  ctx.restore();
 }
 
 function polygon(px, py, r, sides, rot) {
@@ -1662,11 +1765,43 @@ function drawHero() {
   additive(() => glow(sx(hero.x), sy(hero.y), B.heroRadius * 3 * scale,
     "rgba(107,199,255,0.13)", "rgba(107,199,255,0)"));
 
+  // A ring on the ground under the hero. Surrounded by a dozen enemies of
+  // similar size, a blue figure among red ones is not enough — you lose track
+  // of which one is you at exactly the moment that matters.
+  if (!down) {
+    ctx.save();
+    ctx.translate(sx(hero.x), sy(hero.y) + B.heroRadius * 0.62 * scale);
+    ctx.scale(1, 0.4);
+    ctx.strokeStyle = "rgba(140,215,255,0.5)";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, B.heroRadius * 1.3 * scale, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   // Sword first, body over it: the hilt disappears behind the hero, which
   // is what makes it read as held rather than stuck on. The blade shows
   // facing on its own, so there is no crest to fight the highlight.
+  const hx = sx(hero.x), hy = sy(hero.y), hr = B.heroRadius * scale;
+
   if (!down) drawSword();
-  shadedBall(sx(hero.x), sy(hero.y), B.heroRadius * scale, "#b0e4ff", "#2b7cb2", "#8fd6ff");
+  figureBody(hx, hy, hr, "#7fd0ff", "#20618f", "#123f5f");
+  figureHead(hx, hy, hr, "#ffd9b8", "#8a5a35");
+
+  // Helmet: a dome over the head with a brow line, which is what stops the
+  // head reading as a bare dot at this size.
+  ctx.save();
+  ctx.translate(hx, hy - hr * 0.5);
+  ctx.fillStyle = "#cfe9ff";
+  ctx.beginPath();
+  ctx.arc(0, -hr * 0.06, hr * 0.5, Math.PI * 1.02, Math.PI * 1.98);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#8fc4ea";
+  ctx.fillRect(-hr * 0.5, -hr * 0.1, hr, hr * 0.13);
+  ctx.restore();
+
   ctx.globalAlpha = 1;
 
   // Bulwark is worn, not just listed in the HUD — you can see you are safe.
@@ -1724,27 +1859,24 @@ function drawEnemies() {
     // pink mass. A per-instance tint plus a hard outline keeps the count
     // readable without lying about anyone's hit radius.
     const tint = hash2(Math.round(e.born * 1000), 7) < 0.5;
-    if (e.flash > 0) shadedBall(px, py, pr, "#ffffff", "#ffd8de", "#ffffff");
-    else if (e.boss) shadedBall(px, py, pr, "#e79bf5", "#6f2381", "#d98bea");
-    else if (tint) shadedBall(px, py, pr, "#ff98a3", "#9d2836", "#ff8492");
-    else shadedBall(px, py, pr, "#f9808f", "#87202f", "#f47585");
+    let body, dark, edge, skin;
+    if (e.flash > 0)      { body = "#ffffff"; dark = "#ffd0d8"; edge = "#ffffff"; skin = "#ffffff"; }
+    else if (e.boss)      { body = "#d47ce8"; dark = "#5d1c6c"; edge = "#3c1146"; skin = "#e9b9f5"; }
+    else if (tint)        { body = "#ef6b7c"; dark = "#8f2333"; edge = "#5c1520"; skin = "#f6a7ae"; }
+    else                  { body = "#e05f72"; dark = "#7d1c2b"; edge = "#50121c"; skin = "#efa0a8"; }
 
-    ctx.strokeStyle = "rgba(22,8,12,0.5)";
-    ctx.lineWidth = Math.max(1.2, pr * 0.09);
-    ctx.beginPath();
-    ctx.arc(px, py, pr - ctx.lineWidth / 2, 0, TAU);
-    ctx.stroke();
+    figureBody(px, py, pr, body, dark, edge);
+    figureHead(px, py, pr, skin, edge);
 
-    // Eyes track the hero. Two dots are all it takes to make a blob a threat.
+    // Eyes lean toward the hero. Two dots are all it takes to make a shape
+    // read as something that wants to reach you.
     const a = Math.atan2(hero.y - e.y, hero.x - e.x);
-    const ex = Math.cos(a), ey = -Math.sin(a);
-    const nx = -ey, ny = ex;
+    const lean = Math.cos(a) * pr * 0.12;
+    const hy2 = py - pr * 0.5 + Math.max(-pr * 0.06, -Math.sin(a) * pr * 0.08);
     for (const side of [-1, 1]) {
-      const ox = px + ex * pr * 0.34 + nx * side * pr * 0.34;
-      const oy = py + ey * pr * 0.34 + ny * side * pr * 0.34;
-      ctx.fillStyle = "#0d0f14";
+      ctx.fillStyle = "#150d10";
       ctx.beginPath();
-      ctx.arc(ox, oy, pr * 0.17, 0, TAU);
+      ctx.arc(px + lean + side * pr * 0.17, hy2, pr * 0.09, 0, TAU);
       ctx.fill();
     }
 
@@ -1918,20 +2050,76 @@ function drawEffects() {
         "rgba(199,78,219," + (0.16 * k).toFixed(3) + ")", "rgba(199,78,219,0)");
       ctx.restore();
 
-    } else if (f.kind === "tracer") {
+    } else if (f.kind === "arrow") {
+      // Travels from the tower's crenellations to the target across its life,
+      // with a short trail behind it so a volley reads as a volley.
+      const t = 1 - k;
+      const px = sx(f.x + (f.tx - f.x) * t), py = sy(f.y + (f.ty - f.y) * t);
+      const len = 16 * scale;
       ctx.save();
-      ctx.globalCompositeOperation = "lighter";
-      ctx.globalAlpha = k;
-      ctx.strokeStyle = "#a8e8c8";
-      ctx.lineWidth = 2.5;
+      ctx.translate(px, py);
+      ctx.rotate(-f.angle);
+
+      ctx.strokeStyle = "rgba(168,232,200,0.35)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(-len * 2.2, 0);
+      ctx.lineTo(-len * 0.5, 0);
+      ctx.stroke();
+
+      ctx.strokeStyle = "#e8fff4";
+      ctx.lineWidth = Math.max(1.5, 2 * scale);
       ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.moveTo(sx(f.x), sy(f.y));
-      ctx.lineTo(sx(f.tx), sy(f.ty));
+      ctx.moveTo(-len * 0.5, 0);
+      ctx.lineTo(len * 0.5, 0);
       ctx.stroke();
-      glow(sx(f.x), sy(f.y), 16 * scale, "rgba(168,232,200,0.5)", "rgba(168,232,200,0)");
-      glow(sx(f.tx), sy(f.ty), 20 * scale, "rgba(220,255,238,0.45)", "rgba(220,255,238,0)");
+
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.moveTo(len * 0.9, 0);
+      ctx.lineTo(len * 0.35, -len * 0.26);
+      ctx.lineTo(len * 0.35, len * 0.26);
+      ctx.closePath();
+      ctx.fill();
       ctx.restore();
+
+    } else if (f.kind === "dmg") {
+      ctx.save();
+      // Holds full opacity for most of its life, then leaves quickly — a
+      // number that fades the whole way is unreadable for most of it.
+      ctx.globalAlpha = Math.min(1, k * 3);
+      const size = 13 + (1 - k) * 3;
+      ctx.font = "800 " + size.toFixed(1) + "px ui-sans-serif, -apple-system, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      const px = sx(f.x), py = sy(f.y);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(0,0,0,0.75)";
+      ctx.strokeText(f.text, px, py);
+      ctx.fillStyle = f.color;
+      ctx.fillText(f.text, px, py);
+      ctx.restore();
+
+    } else if (f.kind === "corpse") {
+      // Squashes flat and fades, so the eye gets a moment to register the kill.
+      const t = 1 - k;
+      const px = sx(f.x), py = sy(f.y);
+      const r = f.radius * scale;
+      ctx.save();
+      // Stops well short of flat: squashed all the way to nothing it reads as
+      // a stain on the floor rather than a body dropping.
+      ctx.globalAlpha = k * k * 0.8;
+      ctx.translate(px, py + r * 0.36 * t);
+      ctx.scale(1 + t * 0.32, Math.max(0.38, 1 - t * 0.62));
+      ctx.fillStyle = f.boss ? "#8f3aa0" : "#b03446";
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+
+    } else if (f.kind === "muzzle") {
+      additive(() => glow(sx(f.x), sy(f.y), 26 * scale * k,
+        "rgba(190,255,225," + (0.5 * k).toFixed(3) + ")", "rgba(190,255,225,0)"));
 
     } else if (f.kind === "bit") {
       ctx.save();
@@ -2159,6 +2347,98 @@ function frame(now) {
 
   hudTimer += dt;
   if (hudTimer >= 0.1) { hudTimer = 0; syncHUD(); }
+}
+
+/* ---- Persistence ----------------------------------------------------- */
+
+/* What survives a reload is deliberately narrow: the things you *bought*.
+   Upgrade levels, tower levels and the bank carry over; the wave you reached,
+   the enemies on the field and the coins in your satchel do not. A run is a
+   run — restoring one mid-fight would mean reloading to escape a bad wave,
+   and dropping you back into wave 40 on a fresh page load is a worse opening
+   than wave 1 with the towers you earned.
+
+   Offline earnings are deliberately absent rather than forgotten. Paying out
+   for time away needs an income rate that survives the pacing work in
+   DESIGN.md §5, and a wrong number there quietly breaks the curve the whole
+   economy is tuned around. It belongs with that model, not bolted on here. */
+
+const SAVE_KEY = "ironhold.save.v1";
+
+function saveGame() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      v: 1,
+      lv: { ...lv },
+      towers: plots.map(p => p.level),
+      bank,
+      best: Math.max(bestWave, director.wave),
+      totalKills: lifetimeKills + killed,
+    }));
+  } catch { /* private mode, quota, or no storage — the run still plays */ }
+}
+
+let bestWave = 0, lifetimeKills = 0;
+
+function loadGame() {
+  let raw = null;
+  try { raw = localStorage.getItem(SAVE_KEY); } catch { return false; }
+  if (!raw) return false;
+
+  let s;
+  try { s = JSON.parse(raw); } catch { return false; }
+  if (!s || s.v !== 1) return false;
+
+  // Validated rather than trusted: a corrupt or hand-edited save should start
+  // a clean run, not produce a world with NaN prices in it.
+  const int = (n, lo, hi) => {
+    const v = Math.floor(Number(n));
+    return Number.isFinite(v) ? Math.min(Math.max(v, lo), hi) : lo;
+  };
+
+  for (const u of UPGRADES) lv[u.key] = int(s.lv?.[u.key], 0, 500);
+  if (Array.isArray(s.towers)) {
+    plots.forEach((p, i) => { p.level = int(s.towers[i], 0, 500); });
+  }
+  bank = int(s.bank, 0, 1e12);
+  bestWave = int(s.best, 0, 100000);
+  lifetimeKills = int(s.totalKills, 0, 1e12);
+  return true;
+}
+
+// Two taps to wipe, because everything you bought is behind this button and
+// there is no undo.
+const resetBtn = document.getElementById("reset");
+let resetArmed = 0;
+resetBtn.addEventListener("click", () => {
+  if (resetArmed > 0) {
+    try { localStorage.removeItem(SAVE_KEY); } catch { /* nothing to clear */ }
+    location.reload();
+    return;
+  }
+  resetArmed = 1;
+  resetBtn.textContent = "Tap again to wipe";
+  resetBtn.classList.add("arm");
+  setTimeout(() => {
+    resetArmed = 0;
+    resetBtn.textContent = "Reset progress";
+    resetBtn.classList.remove("arm");
+  }, 3000);
+});
+
+const restored = loadGame();
+
+// Saved on a timer and on the way out, rather than on every change — a
+// deposit tick fires many times a second.
+setInterval(saveGame, 4000);
+addEventListener("pagehide", saveGame);
+document.addEventListener("visibilitychange", () => { if (document.hidden) saveGame(); });
+
+if (restored) {
+  const built = plots.filter(p => p.level > 0).length;
+  document.getElementById("hint").textContent = built
+    ? `Welcome back — ${built} tower${built === 1 ? "" : "s"} still standing`
+    : "Welcome back";
 }
 
 syncHUD();
